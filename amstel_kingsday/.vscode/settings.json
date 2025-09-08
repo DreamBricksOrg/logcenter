@@ -1,0 +1,53 @@
+{
+  // Diretório da virtualenv do projeto
+  "python.pythonPath": "${workspaceFolder}/.venv/bin/python",
+
+  // Ativar linting com flake8
+  "python.linting.enabled": true,
+  "python.linting.flake8Enabled": true,
+  "python.linting.flake8Args": ["--max-line-length=88", "--ignore=E203,W503"],
+
+  // Configuração para o Prettier
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  // Ajuste de tabulação para Python
+  "[python]": {
+    "editor.formatOnSave": true,
+    "editor.tabSize": 4,
+    "editor.insertSpaces": true
+  },
+  "[markdown]": {
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "prettier.printWidth": 88,
+  "prettier.tabWidth": 4,
+  "prettier.useTabs": false,
+  "prettier.singleQuote": true,
+  "prettier.trailingComma": "es5",
+
+  // Configurações de auto-save
+  "files.autoSave": "afterDelay",
+  "files.autoSaveDelay": 1000,
+
+  // Configurações de terminal integrado
+  "terminal.integrated.env.linux": {
+    "PYTHONPATH": "${workspaceFolder}"
+  },
+  "terminal.integrated.env.windows": {
+    "PYTHONPATH": "${workspaceFolder}"
+  },
+
+  // Exclua arquivos e diretórios desnecessários da busca
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/*.pyc": true,
+    ".venv": true,
+    "node_modules": true
+  },
+
+  // Ativar o controle de versão Git
+  "git.enabled": true,
+
+  // Configuração de ESLint e Prettier (caso trabalhe com frontend)
+  "eslint.alwaysShowStatus": true
+}
