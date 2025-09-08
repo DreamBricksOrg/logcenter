@@ -9,6 +9,9 @@ services:
       - mongo
   mongo:
     image: mongo:6
+    container_name: logcenter_mongo
+    environment:
+      - MONGO_INITDB_DATABASE=logcenter
     volumes:
       - mongo_data:/data/db
 volumes:
