@@ -1,0 +1,36 @@
+name: Deploy to Prod
+
+on:
+  push:
+    tags:
+      - 'v*'          # Dispara quando um tag que comece com "v" (ex: v1.0.0) for criada
+    branches:
+      - main          # Garante que o commit tagueado pertence à branch main
+
+jobs:
+  deploy-prod:
+    name: Deploy (Prod)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Configurar SSH para acesso ao servidor Prod
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          echo "${{ secrets.KNOWN_HOSTS_PROD }}" >> ~/.ssh/known_hosts
+          # (ou alternativamente: ssh-keyscan -H ${{ secrets.HOST_PROD }} >> ~/.ssh/known_hosts)
+        shell: bash
+
+      - name: Deploy via SSH (Prod)
+        run: |
+          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${{ secrets.USER_PROD }}@${{ secrets.HOST_PROD }} -p ${{ secrets.PORT }} << 'EOSSH'
+            echo "Conectado no servidor Prod, iniciando deploy..."
+            export ENV=${{ secrets.ENV_PROD }}
+            cd /caminho/para/app/LogCenter || exit 1
+            git fetch origin main && git reset --hard origin/main && git pull origin main
+            docker compose down
+            docker compose up -d --build
+          EOSSH

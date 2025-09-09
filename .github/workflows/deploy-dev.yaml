@@ -1,0 +1,42 @@
+name: Deploy to Dev
+
+on:
+  push:
+    branches: [ "dev" ]  # Aciona em pushes na branch dev
+
+jobs:
+  deploy-dev:
+    name: Deploy (Dev)
+    runs-on: ubuntu-latest
+
+    steps:
+      # Opcional: Checkout do código (não estritamente necessário para comando SSH, mas útil se quiser usar arquivos do repo no futuro)
+      - uses: actions/checkout@v3
+
+      - name: Configurar SSH para acesso ao servidor Dev
+        id: ssh-setup
+        run: |
+          mkdir -p ~/.ssh
+          # Salva a chave privada em um arquivo temporário e ajusta permissão
+          echo "${{ secrets.SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          # (Opção 1) Usar known_hosts do secret
+          echo "${{ secrets.KNOWN_HOSTS_DEV }}" >> ~/.ssh/known_hosts
+          # (Opção 2) Sem secret: coletar o host key automaticamente
+          # ssh-keyscan -H ${{ secrets.HOST_DEV }} >> ~/.ssh/known_hosts
+        shell: bash
+
+      - name: Deploy via SSH (Dev)
+        run: |
+          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${{ secrets.USER_DEV }}@${{ secrets.HOST_DEV }} -p ${{ secrets.PORT }} << 'EOSSH'
+            echo "Conectado no servidor Dev, iniciando deploy..."
+            # Exporta variável de ambiente ENV (opcional, se utilizado pelo app)
+            export ENV=${{ secrets.ENV_DEV }}
+            cd /caminho/para/app/LogCenter || exit 1
+            git fetch origin dev && git reset --hard origin/dev && git pull origin dev
+            docker compose down
+            docker compose up -d --build
+          EOSSH
+        env:
+          # Opcionalmente, podemos passar a ENV como variável do runner em vez de inserir dentro do ssh (alternativa)
+          ENV: ${{ secrets.ENV_DEV }}
