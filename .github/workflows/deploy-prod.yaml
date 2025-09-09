@@ -26,11 +26,6 @@ jobs:
 
       - name: Deploy via SSH (Prod)
         run: |
-          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${{ secrets.USER_PROD }}@${{ secrets.HOST_PROD }} -p ${{ secrets.PORT }} << 'EOSSH'
-            echo "Conectado no servidor Prod, iniciando deploy..."
-            export ENV=${{ secrets.ENV_PROD }}
-            cd /caminho/para/app/LogCenter || exit 1
-            git fetch origin main && git reset --hard origin/main && git pull origin main
-            docker compose down
-            docker compose up -d --build
+          scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no scripts/deploy_prod.sh ${{ secrets.USER_PROD }}@${{ secrets.HOST_PROD }}:/tmp/deploy_prod.sh
+          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${{ secrets.USER_PROD }}@${{ secrets.HOST_DEV }} "bash /tmp/deploy_prod.sh"
           EOSSH
