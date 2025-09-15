@@ -47,11 +47,11 @@ jobs:
 
       - name: Empacotamento
         run: |
-          tar -czf "${ARCHIVE_NAME}" \
-            --exclude ".git" \
-            --exclude ".github" \
-            --exclude "tests" \
-            .
+          git config --global core.autocrlf false
+          git archive --format=tar.gz \
+            --output "/tmp/${ARCHIVE_NAME}" \
+            --prefix="logcenter/" \
+            "${GITHUB_SHA}"
 
       - name: Enviar pacote para o servidor (scp)
         run: |
