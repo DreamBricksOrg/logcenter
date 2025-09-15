@@ -7,13 +7,36 @@ on:
     branches:
       - main          # Garante que o commit tagueado pertence à branch main
 
+permissions:
+  contents: read
+
+concurrency:
+  group: prod-deploy
+  cancel-in-progress: false
+
 jobs:
   deploy-prod:
     name: Deploy (Prod)
     runs-on: ubuntu-latest
+    environment: production
+    env:
+      SSH_PORT: ${{ secrets.PORT != '' && secrets.PORT || '22' }}
+      ARCHIVE_NAME: logcenter_${{ github.ref_name }}_${{ github.sha }}.tar.gz
 
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0  # necessário pro check de ancestralidade
+
+      - name: Garantir que a tag aponta para main
+        run: |
+          git fetch origin main
+          # Falha se o commit da tag não for proveninete de main
+          git merge-base --is-ancestor ${{ github.sha }} origin/main || {
+            echo "::error ::A tag não aponta para um commit da branch main. Abortando deploy."
+            exit 1
+          }
 
       - name: Configurar SSH para acesso ao servidor Prod
         run: |
@@ -21,11 +44,36 @@ jobs:
           echo "${{ secrets.SSH_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
           echo "${{ secrets.KNOWN_HOSTS_PROD }}" >> ~/.ssh/known_hosts
-          # (ou alternativamente: ssh-keyscan -H ${{ secrets.HOST_PROD }} >> ~/.ssh/known_hosts)
-        shell: bash
 
-      - name: Deploy via SSH (Prod)
+      - name: Empacotamento
         run: |
-          scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no scripts/deploy_prod.sh ${{ secrets.USER_PROD }}@${{ secrets.HOST_PROD }}:/tmp/deploy_prod.sh
-          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${{ secrets.USER_PROD }}@${{ secrets.HOST_DEV }} "bash /tmp/deploy_prod.sh"
-          EOSSH
+          tar -czf "${ARCHIVE_NAME}" \
+            --exclude ".git" \
+            --exclude ".github" \
+            --exclude "tests" \
+            .
+
+      - name: Enviar pacote para o servidor (scp)
+        run: |
+          scp -P "${SSH_PORT}" -i ~/.ssh/id_rsa -o StrictHostKeyChecking=yes \
+            "${ARCHIVE_NAME}" \
+            "${{ secrets.USER_PROD }}@${{ secrets.HOST_PROD }}:/tmp/${ARCHIVE_NAME}"
+
+      - name: Deploy remoto (ssh)
+        run: |
+          ssh -p "${SSH_PORT}" -i ~/.ssh/id_rsa -o StrictHostKeyChecking=yes \
+            "${{ secrets.USER_PROD }}@${{ secrets.HOST_PROD }}" \
+            "set -euo pipefail;
+             echo '[PROD DEPLOY] Iniciando...';
+             APP_DIR='${{ secrets.REMOTE_PATH_PROD }}';
+             ARCH='/tmp/${ARCHIVE_NAME}';
+             mkdir -p \"$APP_DIR\";
+             # preserva .env local e limpa o resto
+             find \"$APP_DIR\" -mindepth 1 -maxdepth 1 ! -name '.env' -exec rm -rf {} + || true;
+             tar -xzf \"$ARCH\" -C \"$APP_DIR\";
+             cd \"$APP_DIR\";
+             export ENV='${{ secrets.ENV_PROD }}';
+             docker compose down || true;
+             docker compose up -d --build;
+             docker compose ps;
+             echo '[PROD DEPLOY] OK - tag: ${{ github.ref_name }}';"
