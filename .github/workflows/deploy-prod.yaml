@@ -53,6 +53,7 @@ jobs:
           test -n "${{ secrets.SSH_KEY }}" && echo "SSH_KEY set" || echo "SSH_KEY missing"
           test -n "${{ secrets.HOST_PROD }}" && echo "HOST_PROD set" || echo "HOST_PROD missing"
           test -n "${{ secrets.USER_PROD }}" && echo "USER_PROD set" || echo "USER_PROD missing"
+          test -n "${{ secrets.REMOTE_PATH_PROD }}" && echo "REMOTE_PATH_PROD ok" || echo "REMOTE_PATH_PROD missing"
 
       - name: Configurar SSH para acesso ao servidor Prod
         run: |
