@@ -20,14 +20,14 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     env:
-      SSH_PORT: ${{ secrets.PORT != '' && secrets.PORT || '22' }}
+      SSH_PORT: ${{ secrets.PORT || '22' }}
       ARCHIVE_NAME: logcenter_${{ github.ref_name }}_${{ github.sha }}.tar.gz
 
     steps:
       - name: Checkout
         uses: actions/checkout@v3
         with:
-          fetch-depth: 0  # necessário pro check de ancestralidade
+          fetch-depth: 0
 
       - name: Definir variáveis de versão/arquivo
         id: vars
@@ -53,7 +53,12 @@ jobs:
           mkdir -p ~/.ssh
           echo "${{ secrets.SSH_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-          echo "${{ secrets.KNOWN_HOSTS_PROD }}" >> ~/.ssh/known_hosts
+          # se o secret KNOWN_HOSTS_PROD estiver vazio, evita erro adicionando fallback
+          if [ -n "${{ secrets.KNOWN_HOSTS_PROD }}" ]; then
+            echo "${{ secrets.KNOWN_HOSTS_PROD }}" >> ~/.ssh/known_hosts
+          else
+            ssh-keyscan -H "${{ secrets.HOST_PROD }}" >> ~/.ssh/known_hosts 2>/dev/null
+          fi
 
       - name: Empacotamento
         run: |
@@ -62,19 +67,14 @@ jobs:
           ls -lh
 
       - name: Enviar pacote para o servidor (scp)
-        env:
-          SSH_PORT: ${{ secrets.PORT != '' && secrets.PORT || '22' }}
         run: |
-          scp -P "${SSH_PORT}" -i ~/.ssh/id_rsa -o StrictHostKeyChecking=yes \
+          scp -P "${{ env.SSH_PORT }}" -i ~/.ssh/id_rsa -o StrictHostKeyChecking=yes \
             "${{ steps.vars.outputs.archive }}" \
             "${{ secrets.USER_PROD }}@${{ secrets.HOST_PROD }}:/tmp/${{ steps.vars.outputs.archive }}"
 
-
       - name: Deploy remoto (ssh)
-        env:
-          SSH_PORT: ${{ secrets.PORT != '' && secrets.PORT || '22' }}
         run: |
-          ssh -p "${SSH_PORT}" -i ~/.ssh/id_rsa -o StrictHostKeyChecking=yes \
+          ssh -p "${{ env.SSH_PORT }}" -i ~/.ssh/id_rsa -o StrictHostKeyChecking=yes \
             "${{ secrets.USER_PROD }}@${{ secrets.HOST_PROD }}" \
             "set -e;
              echo '[PROD DEPLOY] Iniciando...';
