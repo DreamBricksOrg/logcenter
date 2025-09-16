@@ -80,20 +80,27 @@ jobs:
             "${{ secrets.USER_PROD }}@${{ secrets.HOST_PROD }}:/tmp/${{ steps.vars.outputs.archive }}"
 
       - name: Deploy remoto (ssh)
+        env:
+          SSH_PORT: ${{ secrets.PORT || '22' }}
+          APP_DIR: ${{ secrets.REMOTE_PATH_PROD || '/opt/logcenter' }}
+          ENV_NAME: ${{ secrets.ENV_PROD }}
+          HOST: ${{ secrets.HOST_PROD }}
+          USER: ${{ secrets.USER_PROD }}
+          ARCHIVE: ${{ steps.vars.outputs.archive }}
         run: |
-          ssh -p "${{ env.SSH_PORT }}" -i ~/.ssh/id_rsa -o StrictHostKeyChecking=yes \
-            "${{ secrets.USER_PROD }}@${{ secrets.HOST_PROD }}" \
-            "set -e;
-            echo '[PROD DEPLOY] Iniciando...';
-            APP_DIR=\"${{ secrets.REMOTE_PATH_PROD }}\";   # ex: /opt/logcenter
-            ARCH=\"/tmp/${{ steps.vars.outputs.archive }}\";
-            mkdir -p \"$APP_DIR\";
-            # preserva .env local do servidor
-            find \"$APP_DIR\" -mindepth 1 -maxdepth 1 ! -name '.env' -exec rm -rf {} +;
-            tar -xzf \"$ARCH\" -C \"$APP_DIR\";
-            cd \"$APP_DIR\";
-            export ENV=\"${{ secrets.ENV_PROD }}\";
-            docker compose down || true;
-            docker compose up -d --build;
-            echo '[PROD DEPLOY] OK';"
+          ssh -p "$SSH_PORT" -i ~/.ssh/id_rsa -o StrictHostKeyChecking=yes \
+            "$USER@$HOST" "
+              set -e
+              echo '[PROD DEPLOY] Iniciando...'
+              mkdir -p \"$APP_DIR\"
+              # preserva .env local do servidor
+              find \"$APP_DIR\" -mindepth 1 -maxdepth 1 ! -name '.env' -exec rm -rf {} +
+              tar -xzf \"/tmp/$ARCHIVE\" -C \"$APP_DIR\"
+              cd \"$APP_DIR\"
+              export ENV=\"$ENV_NAME\"
+              docker compose down || true
+              docker compose up -d --build
+              echo '[PROD DEPLOY] OK'
+            "
+
 
