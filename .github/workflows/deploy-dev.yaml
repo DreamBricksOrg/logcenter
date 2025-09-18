@@ -2,35 +2,83 @@ name: Deploy to Dev
 
 on:
   push:
-    branches: [ "dev" ]  # Aciona em pushes na branch dev
+    branches:
+      - dev          # Aciona em pushes na branch dev
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dev-deploy
+  cancel-in-progress: true   # evita conflitos se 2 commits subirem juntos
 
 jobs:
   deploy-dev:
     name: Deploy (Dev)
     runs-on: ubuntu-latest
+    environment: development
+    env:
+      SSH_PORT: ${{ secrets.PORT || '22' }}
 
     steps:
-      # Opcional: Checkout do código (não estritamente necessário para comando SSH, mas útil se quiser usar arquivos do repo no futuro)
-      - uses: actions/checkout@v3
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
 
-      - name: Configurar SSH para acesso ao servidor Dev
-        id: ssh-setup
+      - name: Definir variáveis de versão/arquivo
+        id: vars
+        run: |
+          SHORT_SHA="$(git rev-parse --short HEAD)"
+          ARCHIVE="logcenter_dev_${SHORT_SHA}.tar.gz"
+          echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
+          echo "archive=$ARCHIVE" >> $GITHUB_OUTPUT
+
+      - name: Configurar SSH
         run: |
           mkdir -p ~/.ssh
-          # Salva a chave privada em um arquivo temporário e ajusta permissão
           echo "${{ secrets.SSH_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-          # (Opção 1) Usar known_hosts do secret
-          echo "${{ secrets.KNOWN_HOSTS_DEV }}" >> ~/.ssh/known_hosts
-          # (Opção 2) Sem secret: coletar o host key automaticamente
-          # ssh-keyscan -H ${{ secrets.HOST_DEV }} >> ~/.ssh/known_hosts
-        shell: bash
+          if [ -n "${{ secrets.KNOWN_HOSTS_DEV }}" ]; then
+            echo "${{ secrets.KNOWN_HOSTS_DEV }}" >> ~/.ssh/known_hosts
+          else
+            ssh-keyscan -H "${{ secrets.HOST_DEV }}" >> ~/.ssh/known_hosts 2>/dev/null
+          fi
 
-      - name: Deploy via SSH (Dev)
+      - name: Empacotamento
         run: |
-          scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no scripts/deploy_dev.sh ${{ secrets.USER_DEV }}@${{ secrets.HOST_DEV }}:/tmp/deploy_dev.sh
-          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${{ secrets.USER_DEV }}@${{ secrets.HOST_DEV }} "bash /tmp/deploy_dev.sh"
-          EOSSH
+          git config --global core.autocrlf false
+          git archive --format=tar.gz --output "${{ steps.vars.outputs.archive }}" "${GITHUB_SHA}"
+          ls -lh
+
+      - name: Enviar pacote para o servidor (scp)
         env:
-          # Opcionalmente, podemos passar a ENV como variável do runner em vez de inserir dentro do ssh (alternativa)
-          ENV: ${{ secrets.ENV_DEV }}
+          HOST: ${{ secrets.HOST_DEV }}
+          USER: ${{ secrets.USER_DEV }}
+        run: |
+          scp -P "${{ env.SSH_PORT }}" -i ~/.ssh/id_rsa -o StrictHostKeyChecking=yes \
+            "${{ steps.vars.outputs.archive }}" \
+            "$USER@$HOST:/tmp/${{ steps.vars.outputs.archive }}"
+
+      - name: Deploy remoto (ssh)
+        env:
+          HOST: ${{ secrets.HOST_DEV }}
+          USER: ${{ secrets.USER_DEV }}
+          APP_DIR: ${{ secrets.REMOTE_PATH_DEV }}
+          ENV_NAME: ${{ secrets.ENV_DEV }}
+          ARCHIVE: ${{ steps.vars.outputs.archive }}
+        run: |
+          ssh -p "${{ env.SSH_PORT }}" -i ~/.ssh/id_rsa -o StrictHostKeyChecking=yes \
+            "$USER@$HOST" "
+              set -e
+              echo '[DEV DEPLOY] Iniciando...'
+              mkdir -p \"$APP_DIR\"
+              # preserva .env local
+              find \"$APP_DIR\" -mindepth 1 -maxdepth 1 ! -name '.env' -exec rm -rf {} +
+              tar -xzf \"/tmp/$ARCHIVE\" -C \"$APP_DIR\"
+              cd \"$APP_DIR\"
+              export ENV=\"$ENV_NAME\"
+              docker compose down || true
+              docker compose up -d --build
+              echo '[DEV DEPLOY] OK'
+            "
