@@ -5,14 +5,6 @@ services:
     env_file: .env
     ports:
       - "8000:8000"
-    depends_on:
-      - mongo
-  mongo:
-    image: mongo:6
-    container_name: logcenter_mongo
     environment:
-      - MONGO_INITDB_DATABASE=logcenter
-    volumes:
-      - mongo_data:/data/db
-volumes:
-  mongo_data:
+      # aqui você injeta a URI do Atlas
+      - MONGO_URI=${MONGO_URI}

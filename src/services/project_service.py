@@ -8,11 +8,11 @@ def create_project(name: str, owner: str):
         "owner": owner,
         "createdAt": created_at
     }
-    result = db["project"].insert_one(project_doc)
+    result = db["projects"].insert_one(project_doc)
     return result.inserted_id
 
 def get_all_projects():
-    docs = list(db["project"].find())
+    docs = list(db["projects"].find())
     for doc in docs:
         doc["_id"] = str(doc["_id"])
         if "createdAt" in doc and hasattr(doc["createdAt"], "strftime"):

@@ -3,7 +3,7 @@ import csv
 import zipfile
 from datetime import datetime
 from bson import ObjectId
-from pymongo.errors import InvalidId
+from bson.errors import InvalidId
 
 from db import db
 from util import pkey_manager, crypto, helpers
@@ -31,7 +31,7 @@ def create_log(time_played_str: str, status: str, project: str, additional: str 
         "project": project_oid,
         "additional": additional or ""
     }
-    result = db["datalog"].insert_one(log_doc)
+    result = db["logs"].insert_one(log_doc)
     return result.inserted_id
 
 def get_logs(project: str = None):
@@ -47,7 +47,7 @@ def get_logs(project: str = None):
                 query["project"] = project_doc["_id"]
             else:
                 return []
-    docs = list(db["datalog"].find(query))
+    docs = list(db["logs"].find(query))
     # Normaliza para JSON
     for doc in docs:
         doc["_id"] = str(doc["_id"])
@@ -70,7 +70,7 @@ def get_latest_log_time(project: str = None):
             project_doc = db["project"].find_one({"name": project})
             if project_doc:
                 query["project"] = project_doc["_id"]
-    latest = db["datalog"].find_one(query, sort=[("uploadedData", -1)])
+    latest = db["logs"].find_one(query, sort=[("uploadedData", -1)])
     if not latest:
         return None
     latest_time = latest["uploadedData"]
@@ -95,7 +95,7 @@ def get_status_counts(project: str = None):
         {"$sort": {"_id": 1}},
         {"$project": {"status": "$_id", "_id": 0, "count": 1}}
     ])
-    return list(db["datalog"].aggregate(pipeline))
+    return list(db["logs"].aggregate(pipeline))
 
 def get_all_documents(project_oid=None):
     """Busca logs com join de projeto (apenas campos necessários)."""
@@ -123,7 +123,7 @@ def get_all_documents(project_oid=None):
             }
         }
     ]
-    documents = list(db["datalog"].aggregate(pipeline))
+    documents = list(db["logs"].aggregate(pipeline))
     for doc in documents:
         if "_id" in doc:
             doc["_id"] = str(doc["_id"])
