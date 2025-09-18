@@ -1,15 +1,11 @@
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional, Dict
 from pydantic import BaseModel
 
-class LogEntry(BaseModel):
-    """Schema representando um log."""
-    id: str
-    uploadedData: datetime
-    timePlayed: datetime
-    status: str
+class LogCreate(BaseModel):
     project: str
-    additional: Optional[str] = None
-
-    class Config:
-        orm_mode = True
+    level: str
+    message: str
+    tags: Optional[List[str]] = []
+    data: Optional[Dict] = {}
+    request_id: Optional[str] = None

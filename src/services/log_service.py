@@ -1,6 +1,7 @@
 import io
 import csv
 import zipfile
+import uuid
 from datetime import datetime
 from bson import ObjectId
 from bson.errors import InvalidId
@@ -10,90 +11,64 @@ from util import pkey_manager, crypto, helpers
 
 pkey_mgr = pkey_manager.PKeyManager(directory="pkeys")
 
-def create_log(time_played_str: str, status: str, project: str, additional: str = None):
-    """Insere um novo log no Mongo."""
-    # Parse do timestamp de origem
-    try:
-        time_played = datetime.strptime(time_played_str, "%Y-%m-%dT%H:%M:%SZ")
-    except ValueError:
-        raise ValueError("timePlayed must be in format YYYY-MM-DDTHH:MM:SSZ")
-    # Timestamp de upload (UTC, sem microsegundos)
-    uploaded_data = datetime.utcnow().replace(microsecond=0)
-    # Valida projeto
-    try:
-        project_oid = ObjectId(project)
-    except (InvalidId, TypeError):
-        raise ValueError("Invalid project ID")
+def normalize_doc(doc: dict) -> dict:
+    """Converte ObjectId e datetime para formatos serializáveis"""
+    for k, v in doc.items():
+        if isinstance(v, ObjectId):
+            doc[k] = str(v)
+        elif hasattr(v, "strftime"):
+            doc[k] = helpers.format_datetime(v)
+    return doc
+
+
+def create_log(project: str, level: str, message: str, tags: list = None, data: dict = None, request_id: str = None):
+    """Insere um novo log no Mongo no formato padronizado."""
     log_doc = {
-        "uploadedData": uploaded_data,
-        "timePlayed": time_played,
-        "status": status,
-        "project": project_oid,
-        "additional": additional or ""
+        "id": str(uuid.uuid4()),
+        "timestamp": datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
+        "project": project,
+        "level": level,
+        "tags": tags or [],
+        "message": message,
+        "data": data or {},
+        "request_id": request_id or ""
     }
     result = db["logs"].insert_one(log_doc)
-    return result.inserted_id
+    return log_doc["id"]
+
 
 def get_logs(project: str = None):
     """Busca logs, opcionalmente filtrando por projeto (id ou nome)."""
     query = {}
     if project:
-        try:
-            project_oid = ObjectId(project)
-            query["project"] = project_oid
-        except InvalidId:
-            project_doc = db["project"].find_one({"name": project})
-            if project_doc:
-                query["project"] = project_doc["_id"]
-            else:
-                return []
+        query["project"] = project
     docs = list(db["logs"].find(query))
-    # Normaliza para JSON
-    for doc in docs:
-        doc["_id"] = str(doc["_id"])
-        if "uploadedData" in doc and hasattr(doc["uploadedData"], "strftime"):
-            doc["uploadedData"] = helpers.format_datetime(doc["uploadedData"])
-        if "timePlayed" in doc and hasattr(doc["timePlayed"], "strftime"):
-            doc["timePlayed"] = helpers.format_datetime(doc["timePlayed"])
-        if "project" in doc and isinstance(doc["project"], ObjectId):
-            doc["project"] = str(doc["project"])
-    return docs
+    return [normalize_doc(d) for d in docs]
+
 
 def get_latest_log_time(project: str = None):
-    """Retorna o uploadedData mais recente em ISO string."""
+    """Retorna o timestamp mais recente em ISO string."""
     query = {}
     if project:
-        try:
-            project_oid = ObjectId(project)
-            query["project"] = project_oid
-        except InvalidId:
-            project_doc = db["project"].find_one({"name": project})
-            if project_doc:
-                query["project"] = project_doc["_id"]
-    latest = db["logs"].find_one(query, sort=[("uploadedData", -1)])
+        query["project"] = project
+    latest = db["logs"].find_one(query, sort=[("timestamp", -1)])
     if not latest:
         return None
-    latest_time = latest["uploadedData"]
-    return helpers.format_datetime(latest_time)
+    return latest["timestamp"]
+
 
 def get_status_counts(project: str = None):
-    """Agrupa contagem por status."""
+    """Agrupa contagem por nível (INFO, WARN, ERROR...)."""
     match_stage = {}
     if project:
-        try:
-            project_oid = ObjectId(project)
-            match_stage["project"] = project_oid
-        except InvalidId:
-            project_doc = db["project"].find_one({"name": project})
-            if project_doc:
-                match_stage["project"] = project_doc["_id"]
+        match_stage["project"] = project
     pipeline = []
     if match_stage:
         pipeline.append({"$match": match_stage})
     pipeline.extend([
-        {"$group": {"_id": "$status", "count": {"$sum": 1}}},
+        {"$group": {"_id": "$level", "count": {"$sum": 1}}},
         {"$sort": {"_id": 1}},
-        {"$project": {"status": "$_id", "_id": 0, "count": 1}}
+        {"$project": {"level": "$_id", "_id": 0, "count": 1}}
     ])
     return list(db["logs"].aggregate(pipeline))
 

@@ -1,22 +1,25 @@
 from fastapi import APIRouter, HTTPException, Response, Form
 from typing import Optional
 from services import log_service
+from models.log import LogCreate
 
 router = APIRouter(prefix="/logs", tags=["logs"])
 
 @router.post("/", status_code=200)
-def create_log(
-    timePlayed: str = Form(...),
-    status: str = Form(...),
-    project: str = Form(...),
-    additional: Optional[str] = Form(None)
-):
-    """Recebe um novo log e insere no MongoDB."""
+def create_log(log: LogCreate):
+    """Recebe um novo log padronizado e insere no MongoDB."""
     try:
-        log_service.create_log(timePlayed, status, project, additional)
+        log_id = log_service.create_log(
+            project=log.project,
+            level=log.level,
+            message=log.message,
+            tags=log.tags,
+            data=log.data,
+            request_id=log.request_id
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    return Response(status_code=200)
+    return {"id": log_id}
 
 @router.get("/")
 def list_logs(project: Optional[str] = None):
