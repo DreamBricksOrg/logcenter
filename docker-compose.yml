@@ -5,6 +5,4 @@ services:
     env_file: .env
     ports:
       - "8000:8000"
-    environment:
-      # aqui você injeta a URI do Atlas
-      - MONGO_URI=${MONGO_URI}
+    restart: unless-stopped

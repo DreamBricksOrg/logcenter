@@ -3,14 +3,14 @@ name: Deploy to Dev
 on:
   push:
     branches:
-      - dev          # Aciona em pushes na branch dev
+      - dev          # Dispara a cada push na branch dev
 
 permissions:
   contents: read
 
 concurrency:
   group: dev-deploy
-  cancel-in-progress: true   # evita conflitos se 2 commits subirem juntos
+  cancel-in-progress: true   # evita corrida se houver pushes seguidos
 
 jobs:
   deploy-dev:
@@ -19,12 +19,13 @@ jobs:
     environment: development
     env:
       SSH_PORT: ${{ secrets.PORT || '22' }}
+      ARCHIVE_NAME: logcenter_dev_${{ github.sha }}.tar.gz
 
     steps:
       - name: Checkout
         uses: actions/checkout@v3
         with:
-          fetch-depth: 0
+          fetch-depth: 0 
 
       - name: Definir variáveis de versão/arquivo
         id: vars
@@ -34,11 +35,12 @@ jobs:
           echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
           echo "archive=$ARCHIVE" >> $GITHUB_OUTPUT
 
-      - name: Configurar SSH
+      - name: Configurar SSH para acesso ao servidor Dev
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.SSH_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
+          # se o secret KNOWN_HOSTS_DEV estiver vazio, usa ssh-keyscan como fallback
           if [ -n "${{ secrets.KNOWN_HOSTS_DEV }}" ]; then
             echo "${{ secrets.KNOWN_HOSTS_DEV }}" >> ~/.ssh/known_hosts
           else
@@ -49,7 +51,7 @@ jobs:
         run: |
           git config --global core.autocrlf false
           git archive --format=tar.gz --output "${{ steps.vars.outputs.archive }}" "${GITHUB_SHA}"
-          ls -lh
+          ls -lh "${{ steps.vars.outputs.archive }}"
 
       - name: Enviar pacote para o servidor (scp)
         env:
@@ -64,7 +66,7 @@ jobs:
         env:
           HOST: ${{ secrets.HOST_DEV }}
           USER: ${{ secrets.USER_DEV }}
-          APP_DIR: ${{ secrets.REMOTE_PATH_DEV }}
+          APP_DIR: ${{ secrets.REMOTE_PATH_DEV || '/opt/logcenter' }}
           ENV_NAME: ${{ secrets.ENV_DEV }}
           ARCHIVE: ${{ steps.vars.outputs.archive }}
         run: |
@@ -73,7 +75,7 @@ jobs:
               set -e
               echo '[DEV DEPLOY] Iniciando...'
               mkdir -p \"$APP_DIR\"
-              # preserva .env local
+              # preserva .env local do servidor
               find \"$APP_DIR\" -mindepth 1 -maxdepth 1 ! -name '.env' -exec rm -rf {} +
               tar -xzf \"/tmp/$ARCHIVE\" -C \"$APP_DIR\"
               cd \"$APP_DIR\"

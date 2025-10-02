@@ -1,17 +1,21 @@
-from fastapi import APIRouter, HTTPException, Form
-from services import project_service
+from fastapi import APIRouter, HTTPException
+from typing import List, Dict, Any
+from db.utils import get_db
+from models.project import ProjectCreate, ProjectModel
 
 router = APIRouter(prefix="/projects", tags=["projects"])
+db = get_db()
 
-@router.post("/", status_code=201)
-def create_project(name: str = Form(...), owner: str = Form(...)):
-    """Cria um projeto para agrupar logs."""
-    if not name or not owner:
-        raise HTTPException(status_code=400, detail="Name and owner are required fields.")
-    project_service.create_project(name, owner)
-    return {"detail": "Project created."}
+@router.post("/", response_model=ProjectModel, status_code=201)
+def create_project(payload: ProjectCreate):
+    doc = {"name": payload.name, "code": payload.code, "api_key": payload.api_key}
+    res = db["projects"].insert_one(doc)
+    doc["_id"] = str(res.inserted_id)
+    return doc
 
-@router.get("/")
+@router.get("/", response_model=List[ProjectModel])
 def list_projects():
-    """Lista todos os projetos."""
-    return project_service.get_all_projects()
+    docs = list(db["projects"].find().limit(1000))
+    for d in docs:
+        d["_id"] = str(d["_id"])
+    return docs

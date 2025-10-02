@@ -1,17 +1,16 @@
-from datetime import datetime
+from pydantic import BaseModel, Field
 from typing import Optional
-from pydantic import BaseModel
 
-class ProjectBase(BaseModel):
+class ProjectCreate(BaseModel):
+    name: str = Field(..., min_length=1)
+    code: str = Field(..., min_length=1)
+    api_key: Optional[str] = None
+
+class ProjectModel(BaseModel):
+    id: str = Field(..., alias="_id")
     name: str
-    owner: str
-
-class Project(ProjectBase):
-    id: str
-    createdAt: datetime
-    separator: Optional[str] = None
-    addHeaders: Optional[str] = None
-    pkeyIndex: Optional[int] = None
+    code: str
+    api_key: Optional[str] = None
 
     class Config:
-        orm_mode = True
+        allow_population_by_field_name = True

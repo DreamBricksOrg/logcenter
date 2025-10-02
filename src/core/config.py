@@ -1,8 +1,26 @@
-import os
-from dotenv import load_dotenv
+from pydantic_settings import BaseSettings
+from pydantic import Field
+from typing import Optional
 
-load_dotenv()
+class Settings(BaseSettings):
+    APP_NAME: str = Field("LogCenter API", env="APP_NAME")
+    ENV: str = Field("dev", env="ENV")
+    HOST: str = Field("0.0.0.0", env="HOST")
+    PORT: int = Field(8000, env="PORT")
 
-MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017/logcenter")
-MONGO_DB = os.getenv("MONGO_DB", "logcenter")
-SECRET_KEY = os.getenv("SECRET_KEY", "CHANGE_THIS_SECRET")
+    # Mongo (Atlas ou self-hosted)
+    MONGO_URI: str = Field(..., env="MONGO_URI")
+    MONGO_DB: str = Field("logcenter", env="MONGO_DB")
+
+    # Auth
+    API_KEY_HEADER: str = Field("X-API-Key", env="API_KEY_HEADER")
+    REQUIRE_API_KEY: bool = Field(False, env="REQUIRE_API_KEY")
+
+    # Observabilidade
+    SENTRY_DSN: Optional[str] = Field(None, env="SENTRY_DSN")
+
+    class Config:
+        env_file = ".env"
+        env_file_encoding = "utf-8"
+
+settings = Settings()
