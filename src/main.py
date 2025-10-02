@@ -4,6 +4,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from core.config import settings
 from api.logs import router as logs_router
 from api.projects import router as projects_router
+from api.users import router as users_router
+from api.stream import router as stream_router
 
 try:
     import sentry_sdk
@@ -27,9 +29,11 @@ def create_app() -> FastAPI:
 
     app.include_router(logs_router)
     app.include_router(projects_router)
+    app.include_router(users_router)
+    app.include_router(stream_router)
 
     @app.get("/health")
-    def health():
+    async def health():
         return {"status": "ok", "env": settings.ENV}
 
     return app
