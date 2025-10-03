@@ -1,4 +1,3 @@
-import uuid
 import io
 import csv
 import json
@@ -6,148 +5,183 @@ import zipfile
 from typing import List, Optional, Dict, Any
 from bson import ObjectId
 from db.utils import get_db
-from util.helpers import utcnow_iso, format_datetime, generate_uuid
+from util.helpers import utcnow_iso, format_datetime
 from services.stream_service import manager
 
 
-def _normalize(doc: Dict[str, Any]) -> Dict[str, Any]:
-    """Normaliza ObjectId -> str para JSON serializável."""
-    out = {}
-    for k, v in doc.items():
-        if isinstance(v, ObjectId):
-            out[k] = str(v)
-        else:
-            out[k] = v
+def _serialize_ids(doc: Dict[str, Any]) -> Dict[str, Any]:
+    """Normaliza ObjectId -> str em _id e project_id para resposta JSON."""
+    out = dict(doc)
+    if "_id" in out and isinstance(out["_id"], ObjectId):
+        out["_id"] = str(out["_id"])
+    if "project_id" in out and isinstance(out["project_id"], ObjectId):
+        out["project_id"] = str(out["project_id"])
     return out
 
 
+async def _ensure_project_exists(db, project_id: str) -> ObjectId:
+    """Valida project_id (string OID) e garante que o projeto existe."""
+    try:
+        oid = ObjectId(project_id)
+    except Exception:
+        raise ValueError("Invalid project_id (must be a valid ObjectId string)")
+
+    proj = await db["projects"].find_one({"_id": oid}, {"_id": 1})
+    if not proj:
+        raise ValueError("Project not found for given project_id")
+    return oid
+
+
 async def create_log(
-    project: str,
+    project_id: str,
+    status: str,
     level: str,
     message: str,
+    timestamp: Optional[str] = None,
     tags: Optional[List[str]] = None,
-    data: Optional[Dict] = None,
+    data: Optional[Dict[str, Any]] = None,
     request_id: Optional[str] = None,
 ) -> str:
     """Cria e insere log no MongoDB + emite broadcast."""
-    log_doc = {
-        "id": str(generate_uuid()),
-        "timestamp": utcnow_iso(),
-        "project": project,
+
+    db = await get_db()
+
+    # valida project_id e converte para ObjectId
+    proj_oid = await _ensure_project_exists(db, project_id)
+
+    # uploadedAt é o "agora" do servidor em ISO Z sem micros, via helper obrigatória
+    uploaded_at = utcnow_iso()
+
+    # timestamp do evento: se vier vazio, assumimos agora (ISO Z)
+    event_ts = timestamp or utcnow_iso()
+
+    log_doc: Dict[str, Any] = {
+        "uploadedAt": uploaded_at,
+        "timestamp": event_ts,
+        "status": status,
         "level": level,
         "message": message,
         "tags": tags or [],
         "data": data or {},
         "request_id": request_id or None,
+        "project_id": proj_oid,
     }
 
-    db = await get_db()
+    res = await db["logs"].insert_one(log_doc)
 
-    await db["logs"].insert_one(log_doc)
+    # Broadcast em tempo real por canal do project_id (string)
+    await manager.broadcast(str(proj_oid), json.dumps({
+        **_serialize_ids(log_doc),
+        "_id": str(res.inserted_id)
+    }, ensure_ascii=False, separators=(",", ":")))
 
-    # envia broadcast em tempo real
-    await manager.broadcast(
-        project,
-        json.dumps(log_doc, ensure_ascii=False, separators=(",", ":"))
-    )
-
-    return log_doc["id"]
+    return str(res.inserted_id)
 
 
 async def list_logs(
-    project: Optional[str] = None,
+    project_id: Optional[str] = None,
     visibility: Optional[Dict[str, Any]] = None
 ) -> List[Dict[str, Any]]:
     """
     Lista até 1000 logs mais recentes.
-    Aplica visibilidade se fornecida (ex: enforce_visibility).
+    Aplica visibilidade (espera receber filtros por project_id) e filtro opcional por project_id.
     """
     db = await get_db()
-
     query: Dict[str, Any] = {}
     if visibility:
         query.update(visibility)
 
-    if project:
+    if project_id:
         # Se já existe filtro de visibilidade com $in, restringe sem permitir bypass
-        if "project" in query and isinstance(query["project"], dict) and "$in" in query["project"]:
-            if project not in query["project"]["$in"]:
-                return []  # cliente tentando acessar projeto que não pode
-        query["project"] = project
+        if "project_id" in query and isinstance(query["project_id"], dict) and "$in" in query["project_id"]:
+            allowed = {str(x) for x in query["project_id"]["$in"]}
+            if project_id not in allowed:
+                return []
+        try:
+            query["project_id"] = ObjectId(project_id)
+        except Exception:
+            return [] 
 
     cursor = db["logs"].find(query).sort("timestamp", -1).limit(1000)
     docs = await cursor.to_list(length=1000)
-
-    # Normaliza ObjectId -> str
-    for d in docs:
-        if "_id" in d:
-            d["_id"] = str(d["_id"])
-    return docs
+    return [_serialize_ids(d) for d in docs]
 
 
-async def latest_timestamp(project: Optional[str] = None) -> Optional[str]:
-    """Retorna timestamp mais recente de log de um projeto."""
+async def latest_timestamp(project_id: Optional[str] = None) -> Optional[str]:
+    """Retorna o timestamp mais recente de um projeto (ou geral)."""
     db = await get_db()
-    query = {}
-    if project:
-        query["project"] = project
+    query: Dict[str, Any] = {}
+    if project_id:
+        try:
+            query["project_id"] = ObjectId(project_id)
+        except Exception:
+            return None
 
-    doc = await db["logs"].find_one(query, sort=[("timestamp", -1)])
+    doc = await db["logs"].find_one(query, sort=[("timestamp", -1)], projection={"timestamp": 1})
     return doc["timestamp"] if doc else None
 
 
-async def level_counts(project: Optional[str] = None) -> List[Dict[str, Any]]:
-    """Conta logs agrupados por nível normalizado (UPPER)."""
+async def level_counts(project_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Conta logs agrupados por 'level' (normalizado para UPPER)."""
+    db = await get_db()
     pipeline: List[Dict[str, Any]] = []
 
-    if project:
-        pipeline.append({"$match": {"project": project}})
+    if project_id:
+        try:
+            pipeline.append({"$match": {"project_id": ObjectId(project_id)}})
+        except Exception:
+            return []
 
     pipeline.extend([
-        # Normaliza o campo 'level' para UPPER antes de agrupar
         {"$addFields": {"_norm_level": {"$toUpper": "$level"}}},
         {"$group": {"_id": "$_norm_level", "count": {"$sum": 1}}},
         {"$sort": {"_id": 1}},
         {"$project": {"level": "$_id", "_id": 0, "count": 1}},
     ])
-    db = await get_db()
 
     cursor = db["logs"].aggregate(pipeline)
     return [doc async for doc in cursor]
 
 
-async def generate_logs_csv(project: Optional[str] = None) -> io.BytesIO:
+async def generate_logs_csv(project_id: Optional[str] = None) -> io.BytesIO:
     """Exporta logs em CSV dentro de um ZIP."""
     db = await get_db()
 
     query: Dict[str, Any] = {}
-    if project:
-        query["project"] = project
+    if project_id:
+        try:
+            query["project_id"] = ObjectId(project_id)
+        except Exception:
+            # project_id inválido -> exporta vazio
+            mem = io.BytesIO()
+            with zipfile.ZipFile(mem, "w", zipfile.ZIP_DEFLATED) as z:
+                z.writestr("logs.csv", " _id,uploadedAt,timestamp,status,level,message,tags,data,request_id,project_id\n")
+            mem.seek(0)
+            return mem
 
-    cursor = db["logs"].find(query, {
-        "_id": 0,
-        "id": 1,
+    projection = {
+        "_id": 1,
+        "uploadedAt": 1,
         "timestamp": 1,
-        "project": 1,
+        "status": 1,
         "level": 1,
         "message": 1,
         "tags": 1,
         "data": 1,
         "request_id": 1,
-    }).sort("timestamp", -1)
+        "project_id": 1,
+    }
 
-    docs = await cursor.to_list(length=10000)
+    cursor = db["logs"].find(query, projection).sort("timestamp", -1)
+    docs = [_serialize_ids(d) async for d in cursor]
 
+    # monta CSV
     output = io.StringIO()
-    fieldnames = ["id", "timestamp", "project", "level", "message", "tags", "data", "request_id"]
+    fieldnames = ["_id", "uploadedAt", "timestamp", "status", "level", "message", "tags", "data", "request_id", "project_id"]
     writer = csv.DictWriter(output, fieldnames=fieldnames)
     writer.writeheader()
 
     for d in docs:
-        norm_level = (d.get("level") or "")
-        if isinstance(norm_level, str):
-            norm_level = norm_level.upper()
-
         tags_val = d.get("tags") or []
         tags_str = ";".join(map(str, tags_val)) if isinstance(tags_val, list) else str(tags_val)
 
@@ -158,18 +192,19 @@ async def generate_logs_csv(project: Optional[str] = None) -> io.BytesIO:
             data_json = "{}"
 
         writer.writerow({
-            "id": d.get("id", ""),
+            "_id": d.get("_id", ""),
+            "uploadedAt": d.get("uploadedAt", ""),
             "timestamp": d.get("timestamp", ""),
-            "project": d.get("project", ""),
-            "level": norm_level,
+            "status": d.get("status", ""),
+            "level": d.get("level", ""),
             "message": d.get("message", ""),
             "tags": tags_str,
             "data": data_json,
             "request_id": d.get("request_id", "") or "",
+            "project_id": d.get("project_id", ""),
         })
 
     output.seek(0)
-
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("logs.csv", output.getvalue())
