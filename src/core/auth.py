@@ -1,4 +1,7 @@
 from __future__ import annotations
+import hmac
+import hashlib
+import secrets
 
 from typing import Optional, Dict, Any
 from fastapi import Header, HTTPException, status, Depends
@@ -13,6 +16,7 @@ Autenticação/Autorização simples:
 - Admin: envia X-Admin-Email e X-Admin-Password (básico, para admin dashboard/CRUD). Retorna role=admin.
 """
 
+ADMIN_KEY_SEPARATOR = "."
 
 async def _find_project_by_api_key(db, api_key_plain: str) -> Optional[Dict[str, Any]]:
     """
@@ -26,6 +30,29 @@ async def _find_project_by_api_key(db, api_key_plain: str) -> Optional[Dict[str,
         if salt and hsh and verify_secret(api_key_plain, salt, hsh):
             return p
     return None
+
+async def generate_admin_key(secret_key: str = None) -> str:
+    """
+    Gera uma admin API key no formato: <id>.<hex_mac>
+    """
+    sk = secret_key or settings.SECRET_KEY
+    rnd = secrets.token_hex(16)  # 32 hex chars
+    mac = hmac.new(sk.encode("utf-8"), rnd.encode("utf-8"), hashlib.sha256).hexdigest()
+    return f"{rnd}{ADMIN_KEY_SEPARATOR}{mac}"
+
+async def is_admin_key(key: str, secret_key: str = None) -> bool:
+    """
+    Valida se `key` é uma admin key válida derivada do secret_key.
+    """
+    sk = secret_key or settings.SECRET_KEY
+    if not key or ADMIN_KEY_SEPARATOR not in key:
+        return False
+    try:
+        rnd, mac = key.split(ADMIN_KEY_SEPARATOR, 1)
+    except ValueError:
+        return False
+    expected = hmac.new(sk.encode("utf-8"), rnd.encode("utf-8"), hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, mac)
 
 
 async def require_principal(
@@ -43,7 +70,14 @@ async def require_principal(
     """
     db = await get_db()
 
-    # Autenticação por API Key (cliente)
+    # Autenticação por API Key (admin)
+    if x_api_key and is_admin_key(x_api_key):
+        return {
+            "role": "admin",
+            "method": "admin_key",
+        }
+
+    # Auttenticação por project API key (cliente)
     if x_api_key:
         project = await _find_project_by_api_key(db, x_api_key)
         if not project:

@@ -1,3 +1,4 @@
+# src/api/logs.py
 from fastapi import APIRouter, HTTPException, Depends, Response, Query, Header
 from typing import List, Optional, Dict, Any
 from models.log import LogCreate
@@ -13,11 +14,14 @@ def require_api_key(x_api_key: Optional[str] = Header(default=None, convert_unde
         raise HTTPException(status_code=401, detail="Missing API key")
     return True
 
+
 @router.post("/", response_model=Dict[str, str], status_code=201)
 async def create_log(payload: LogCreate, ok: bool = Depends(require_api_key)):
     try:
         log_id = await log_service.create_log(
-            project=payload.project,
+            project_id=payload.project_id, 
+            timestamp=payload.timestamp,
+            status=payload.status,
             level=payload.level,
             message=payload.message,
             tags=payload.tags,
@@ -30,16 +34,16 @@ async def create_log(payload: LogCreate, ok: bool = Depends(require_api_key)):
 
 @router.get("/", response_model=List[Dict[str, Any]])
 async def list_logs(
-    q_project: Optional[str] = Query(default=None, alias="project"),
+    q_project_id: Optional[str] = Query(default=None, alias="project_id"),
     visibility: Dict[str, Any] = Depends(enforce_visibility),
 ):
-    return await log_service.list_logs(project=q_project, visibility=visibility)
+    return await log_service.list_logs(project_id=q_project_id, visibility=visibility)
 
 @router.get("/latest", response_model=Dict[str, Optional[str]])
-async def latest(project: Optional[str] = Query(default=None)):
-    ts = await log_service.latest_timestamp(project)
+async def latest(project_id: Optional[str] = Query(default=None)):
+    ts = await log_service.latest_timestamp(project_id)
     return {"timestamp": ts}
 
 @router.get("/levels", response_model=List[Dict[str, Any]])
-async def level_counts(project: Optional[str] = Query(default=None)):
-    return await log_service.level_counts(project)
+async def level_counts(project_id: Optional[str] = Query(default=None)):
+    return await log_service.level_counts(project_id)
