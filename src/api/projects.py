@@ -1,5 +1,5 @@
-from fastapi import APIRouter, HTTPException, Depends
-from typing import List
+from fastapi import APIRouter, HTTPException, Depends, Query
+from typing import Optional, List
 from models.project import ProjectCreate, ProjectUpdate, ProjectOut
 from core.auth import require_principal
 from services import project_service
@@ -16,16 +16,22 @@ async def create_project(payload: ProjectCreate, principal=Depends(require_princ
             name=payload.name,
             code=payload.code,
             api_key_plain=payload.api_key_plain,
+            description=payload.description,
+            config=(payload.config.model_dump() if payload.config else None),
         )
     except ValueError as e:
         raise HTTPException(status_code=409 if "exists" in str(e) else 400, detail=str(e))
 
-
 @router.get("/", response_model=List[ProjectOut])
-async def list_projects(principal=Depends(require_principal)):
+async def list_projects(
+    principal=Depends(require_principal),
+    name: Optional[str] = Query(default=None),
+    code: Optional[str] = Query(default=None),
+):
     if principal["role"] not in ("admin", "client", "guest"):
         raise HTTPException(status_code=403)
-    return await project_service.list_projects()
+    return await project_service.list_projects(name=name, code=code)
+
 
 
 @router.patch("/{project_id}", response_model=ProjectOut)
@@ -38,6 +44,8 @@ async def update_project(project_id: str, payload: ProjectUpdate, principal=Depe
             name=payload.name,
             code=payload.code,
             api_key_plain=payload.api_key_plain,
+            description=payload.description,
+            config=(payload.config.model_dump() if payload.config else None),
         )
     except ValueError as e:
         msg = str(e)
@@ -51,15 +59,12 @@ async def update_project(project_id: str, payload: ProjectUpdate, principal=Depe
     except LookupError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
-
 @router.delete("/{project_id}", status_code=204)
 async def delete_project(project_id: str, principal=Depends(require_principal)):
     if principal["role"] != "admin":
         raise HTTPException(status_code=403, detail="Admin required")
     try:
         await project_service.delete_project(project_id)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except LookupError as e:
+    except (ValueError, LookupError) as e:
         raise HTTPException(status_code=404, detail=str(e))
     return None
