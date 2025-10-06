@@ -2,35 +2,78 @@ from typing import List, Dict, Any, Optional
 from bson import ObjectId
 from datetime import datetime
 
-from db.utils import get_db 
+from db.utils import get_db
 from core.security import hash_secret
+from util.helpers import utcnow_iso, format_datetime  
 
 
-def _to_str_id(doc: Dict[str, Any]) -> Dict[str, Any]:
-    if not doc:
-        return doc
-    d = dict(doc)
-    if "_id" in d:
-        d["_id"] = str(d["_id"])
-    return d
-
-
-async def create_project(*, name: str, code: str, api_key_plain: Optional[str] = None) -> Dict[str, Any]:
+def _ensure_config_dict(cfg_in: Optional[dict]) -> Dict[str, Any]:
     """
-    Cria projeto com (name, code) e opcionalmente define API Key (salt/hash).
+    Normaliza a estrutura 'config' no documento"""
+    cfg: Dict[str, Any] = {}
+    if cfg_in:
+        cfg = {
+            "defaultTags": list(cfg_in.get("defaultTags") or []),
+            "separator": (cfg_in.get("separator") or ","),
+            "exportFields": list(cfg_in.get("exportFields") or []),
+        }
+    else:
+        cfg = {
+            "defaultTags": [],
+            "separator": ",",
+            "exportFields": [],
+        }
+    return cfg
+
+def _public_out(doc: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Formata a saída pública (ProjectOut) sem expor hash/salt.
+    Se 'config' existir, devolve como dicionário.
+    """
+    created_raw = doc.get("createdAt")
+
+    if isinstance(created_raw, datetime):
+        created_iso = format_datetime(created_raw)
+    elif isinstance(created_raw, str) and created_raw.strip():
+        created_iso = created_raw
+    else:
+        created_iso = utcnow_iso()
+
+    return {
+        "_id": str(doc["_id"]),
+        "name": doc["name"],
+        "code": doc["code"],
+        "has_api_key": bool(doc.get("api_key_hash")),
+        "description": doc.get("description"),
+        "config": doc.get("config"),
+        "createdAt": created_iso,
+    }
+
+async def create_project(
+    *,
+    name: str,
+    code: str,
+    api_key_plain: Optional[str] = None,
+    description: Optional[str] = None,
+    config: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """
+    Cria projeto com (name, code).
     Garante unicidade de 'code'.
     """
     db = await get_db()
 
-    # code unique
-    exists = await db["projects"].find_one({"code": code})
-    if exists:
+    if await db["projects"].find_one({"code": code}):
         raise ValueError("Project code already exists")
+
+    created_at_iso = utcnow_iso()
 
     doc: Dict[str, Any] = {
         "name": name.strip(),
         "code": code.strip(),
-        "createdAt": datetime.utcnow().replace(microsecond=0),
+        "description": (description.strip() if isinstance(description, str) else None),
+        "createdAt": created_at_iso,
+        "config": _ensure_config_dict(config),
     }
 
     if api_key_plain:
@@ -39,29 +82,24 @@ async def create_project(*, name: str, code: str, api_key_plain: Optional[str] =
         doc["api_key_hash"] = hsh
 
     res = await db["projects"].insert_one(doc)
-    doc["_id"] = str(res.inserted_id)
-    return {
-        "_id": doc["_id"],
-        "name": doc["name"],
-        "code": doc["code"],
-        "has_api_key": "api_key_hash" in doc,
-    }
+    doc["_id"] = res.inserted_id
+    return _public_out(doc)
 
 
-async def list_projects() -> List[Dict[str, Any]]:
-    """Retorna todos os projetos (sem expor hash/salt)."""
+async def list_projects(name: Optional[str] = None, code: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Retorna todos os projetos (sem expor hash/salt). Com filtro opcional de nome ou code"""
     db = await get_db()
-    cursor = db["projects"].find({}, {"name": 1, "code": 1})
+    query = {}
+    if name:
+        query["name"] = {"$regex": name, "$options": "i"}  # case-insensitive
+    if code:
+        query["code"] = code
+
+    cursor = db["projects"].find(query)
     docs = await cursor.to_list(length=1000)
-    out: List[Dict[str, Any]] = []
-    for d in docs:
-        out.append({
-            "_id": str(d["_id"]),
-            "name": d["name"],
-            "code": d["code"],
-            "has_api_key": True,
-        })
-    return out
+
+    return [ _public_out(d) for d in docs]
+
 
 
 async def update_project(
@@ -70,10 +108,12 @@ async def update_project(
     name: Optional[str] = None,
     code: Optional[str] = None,
     api_key_plain: Optional[str] = None,
+    description: Optional[str] = None,
+    config: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
-    Atualiza campos do projeto. Garante unicidade de 'code'.
-    Retorna ProjectOut.
+    Atualiza campos do projeto, garantindo unicidade de 'code'.
+    Retorna ProjectOut (sem hash/salt).
     """
     db = await get_db()
     try:
@@ -82,13 +122,23 @@ async def update_project(
         raise ValueError("Invalid id")
 
     updates: Dict[str, Any] = {}
+
     if name is not None:
         updates["name"] = name.strip()
+
     if code is not None:
+        # checa conflito de code
         conflict = await db["projects"].find_one({"code": code, "_id": {"$ne": oid}})
         if conflict:
             raise ValueError("Project code already exists")
         updates["code"] = code.strip()
+
+    if description is not None:
+        updates["description"] = description.strip()
+
+    if config is not None:
+        updates["config"] = _ensure_config_dict(config)
+
     if api_key_plain:
         salt, hsh = hash_secret(api_key_plain)
         updates["api_key_salt"] = salt
@@ -101,13 +151,11 @@ async def update_project(
     if res.matched_count == 0:
         raise LookupError("Project not found")
 
-    doc = await db["projects"].find_one({"_id": oid}, {"name": 1, "code": 1, "api_key_hash": 1})
-    return {
-        "_id": str(doc["_id"]),
-        "name": doc["name"],
-        "code": doc["code"],
-        "has_api_key": "api_key_hash" in doc,
-    }
+    doc = await db["projects"].find_one(
+        {"_id": oid},
+        {"name": 1, "code": 1, "api_key_hash": 1, "description": 1, "config": 1},
+    )
+    return _public_out(doc)
 
 
 async def delete_project(project_id: str) -> None:
