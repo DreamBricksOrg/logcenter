@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, Depends, Query
-from typing import Optional, List
+from typing import Optional, List, Dict
 from models.project import ProjectCreate, ProjectUpdate, ProjectOut
 from core.auth import require_principal
 from services import project_service
@@ -68,3 +68,13 @@ async def delete_project(project_id: str, principal=Depends(require_principal)):
     except (ValueError, LookupError) as e:
         raise HTTPException(status_code=404, detail=str(e))
     return None
+
+@router.post("/{project_id}/apikey", response_model=Dict[str, str], status_code=201)
+async def regenerate_project_apikey(project_id: str, principal=Depends(require_principal)):
+    if principal.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin required")
+    try:
+        api_key = await project_service.generate_api_key_for_project(project_id)
+        return {"project_id": project_id, "api_key": api_key}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
