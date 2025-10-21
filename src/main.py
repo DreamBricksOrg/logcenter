@@ -6,6 +6,7 @@ from api.logs import router as logs_router
 from api.projects import router as projects_router
 from api.users import router as users_router
 from api.stream import router as stream_router
+from api.auth import router as auth_router
 
 try:
     import sentry_sdk
@@ -15,7 +16,7 @@ except Exception:
     SENTRY_AVAILABLE = False
 
 def create_app() -> FastAPI:
-    app = FastAPI(title=settings.APP_NAME, version="0.1.5-dev")
+    app = FastAPI(title=settings.APP_NAME, version="0.1.5.1-dev")
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -27,6 +28,7 @@ def create_app() -> FastAPI:
         sentry_sdk.init(dsn=settings.SENTRY_DSN, traces_sample_rate=0.2)
         app.add_middleware(SentryAsgiMiddleware)
 
+    app.include_router(auth_router)
     app.include_router(logs_router)
     app.include_router(projects_router)
     app.include_router(users_router)

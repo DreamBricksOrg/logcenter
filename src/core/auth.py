@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from bson import ObjectId
 from typing import Optional, Dict, Any
 from fastapi import Header, HTTPException, status, Depends
 
@@ -101,18 +102,15 @@ async def enforce_visibility(principal: Dict[str, Any] = Depends(require_princip
     - guest: acesso total ({}), apenas quando permitido (REQUIRE_API_KEY=False).
     """
     role = principal.get("role")
-
     if role == "admin":
-        codes = principal.get("project_codes") or []
-        if codes:
-            return {"project": {"$in": codes}}
+        ids = principal.get("project_ids") or []
+        if ids:
+            # Converte para ObjectId
+            return {"project_id": {"$in": [ObjectId(x) for x in ids]}}
         return {}
-
     if role == "client":
-        codes = principal.get("project_codes", [])
-        if not codes:
-            raise HTTPException(status_code=403, detail="No project bound to API key")
-        return {"project": {"$in": codes}}
-
-    # Guest (idem)
+        ids = principal.get("project_ids", [])
+        if not ids:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No project bound to API key")
+        return {"project_id": {"$in": [ObjectId(x) for x in ids]}}
     return {}
