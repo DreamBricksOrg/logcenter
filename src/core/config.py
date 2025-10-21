@@ -11,9 +11,10 @@ class Settings(BaseSettings):
     # Mongo (Atlas ou self-hosted)
     MONGO_URI: str = Field(..., env="MONGO_URI")
     MONGO_DB: str = Field("logcenter", env="MONGO_DB")
+    MONGO_DEBUG: bool = Field(False, env="MONGO_DEBUG")
 
     # Auth
-    API_KEY_HEADER: str = Field("X-API-Key", env="API_KEY_HEADER")
+    SECRET_KEY: str = Field(..., env="SECRET_KEY")
     REQUIRE_API_KEY: bool = Field(False, env="REQUIRE_API_KEY")
 
     # Observabilidade
