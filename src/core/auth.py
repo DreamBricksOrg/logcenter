@@ -72,7 +72,7 @@ async def require_principal(
     db = await get_db()
 
     # Autenticação por API Key (admin)
-    if x_api_key and is_admin_key(x_api_key):
+    if x_api_key and await is_admin_key(x_api_key):
         return {
             "role": "admin",
             "method": "admin_key",
