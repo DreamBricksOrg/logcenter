@@ -25,4 +25,4 @@ class UserOut(BaseModel):
     project_codes: List[str] = []
 
     class Config:
-        allow_population_by_field_name = True
+        validate_by_name = True
