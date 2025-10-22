@@ -44,7 +44,14 @@ async def require_principal(
     """
     db = await get_db()
 
-    # Autenticação por API Key (cliente)
+    # Autenticação por API Key (admin)
+    if x_api_key and await is_admin_key(x_api_key):
+        return {
+            "role": "admin",
+            "method": "admin_key",
+        }
+
+    # Auttenticação por project API key (cliente)
     if x_api_key:
         project = await _find_project_by_api_key(db, x_api_key)
         if not project:
