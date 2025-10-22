@@ -16,7 +16,7 @@ except Exception:
     SENTRY_AVAILABLE = False
 
 def create_app() -> FastAPI:
-    app = FastAPI(title=settings.APP_NAME, version="0.1.5.1-dev")
+    app = FastAPI(title=settings.APP_NAME, version="0.1.5.2-dev")
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
