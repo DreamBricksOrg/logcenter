@@ -104,6 +104,18 @@ Há **dois** modos:
 
 ## 6) Fluxo inicial
 
+## Filtros suportados
+
+Todos os endpoints de listagem e dashboard aceitam filtros via query string com os operadores:
+
+| Operador      | Exemplo                          | Descrição                         |
+|---------------|----------------------------------|-----------------------------------|
+| `campo=valor` | `level=INFO`                     | igualdade                         |
+| `__in`        | `level__in=INFO&level__in=ERROR` | qualquer um da lista              |
+| `__gte`       | `timestamp__gte=2025-01-01`      | maior ou igual                    |
+| `__lte`       | `timestamp__lte=2025-01-10`      | menor ou igual                    |
+| `__regex`     | `message__regex=^Falha`          | expressão regular (regex Mongo)   |
+
 1) **Gerar ADMIN_KEY**:
    ```bash
    python gen_admin_key.py
@@ -135,6 +147,34 @@ Há **dois** modos:
    ```bash
    curl -H "X-Admin-Key: <ADMIN_KEY>" http://localhost:8000/logs/
    ```
+
+5) **Exportar CSV**
+  ```bash
+  curl -H "X-API-Key: abc123" "http://localhost:8000/logs/export?format=csv" --output logs.csv
+  ```
+
+6) **Exportar Excel**
+  ```bash
+  curl -H "X-API-Key: abc123" "http://localhost:8000/logs/export?format=xlsx" --output logs.xlsx
+  ```
+
+7) **Dashboard: níveis**
+  ```bash
+  curl -H "X-API-Key: abc123" "http://localhost:8000/dash/levels?timestamp__gte=2025-01-01"
+  ```
+
+8) **Dashboard: top users**
+  ```bash
+  curl -H "X-API-Key: abc123" "http://localhost:8000/dash/top-users"
+  ```
+
+## Índices recomendados (MongoDB)
+
+```js
+db.logs.createIndex({ project_id: 1, timestamp: -1 });
+db.logs.createIndex({ level: 1, timestamp: -1 });
+db.logs.createIndex({ "data.userId": 1 });
+db.logs.createIndex({ "data.endpoint": 1 });
 
 ## 7) Endpoints da API (resumo)
 

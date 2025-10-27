@@ -215,9 +215,6 @@ async def generate_logs_csv(
     """Exporta logs filtrados como CSV puro (não zipado)."""
     db = await get_db()
 
-    print("Filtros finais aplicados:", filters)
-    print("Visibilidade:", visibility)
-
     query_parts = []
     if filters:
         f: Dict[str, Any] = {}
@@ -298,9 +295,7 @@ async def generate_logs_excel(
     db = await get_db()
     query_parts = []
 
-    print("Filtros finais aplicados:", filters)
-    print("Visibilidade:", visibility)
-    
+   
     if filters:
         f: Dict[str, Any] = {}
         for k, v in filters.items():
