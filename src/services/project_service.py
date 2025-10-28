@@ -10,7 +10,8 @@ from util.helpers import utcnow_iso, format_datetime, generate_uuid
 
 def _ensure_config_dict(cfg_in: Optional[dict]) -> Dict[str, Any]:
     """
-    Normaliza a estrutura 'config' no documento"""
+    Normaliza a estrutura 'config' no documento
+    """
     cfg: Dict[str, Any] = {}
     if cfg_in:
         cfg = {
@@ -25,6 +26,17 @@ def _ensure_config_dict(cfg_in: Optional[dict]) -> Dict[str, Any]:
             "exportFields": [],
         }
     return cfg
+
+
+def _normalize_status(value: Optional[str]) -> str:
+    """
+    Normaliza status -> 'active' | 'inactive'. Default = 'active'.
+    """
+    if not value:
+        return "active"
+    v = str(value).strip().lower()
+    return v if v in ("active", "inactive") else "active"
+
 
 def _public_out(doc: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -48,7 +60,9 @@ def _public_out(doc: Dict[str, Any]) -> Dict[str, Any]:
         "description": doc.get("description"),
         "config": doc.get("config"),
         "createdAt": created_iso,
+        "status": _normalize_status(doc.get("status")),
     }
+
 
 async def create_project(
     *,
@@ -57,6 +71,7 @@ async def create_project(
     api_key_plain: Optional[str] = None,
     description: Optional[str] = None,
     config: Optional[Dict[str, Any]] = None,
+    status: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Cria projeto com (name, code).
@@ -75,6 +90,7 @@ async def create_project(
         "description": (description.strip() if isinstance(description, str) else None),
         "createdAt": created_at_iso,
         "config": _ensure_config_dict(config),
+        "status": _normalize_status(status or "active"),
     }
 
     if api_key_plain:
@@ -87,20 +103,28 @@ async def create_project(
     return _public_out(doc)
 
 
-async def list_projects(name: Optional[str] = None, code: Optional[str] = None) -> List[Dict[str, Any]]:
-    """Retorna todos os projetos (sem expor hash/salt). Com filtro opcional de nome ou code"""
+async def list_projects(
+    name: Optional[str] = None,
+    code: Optional[str] = None,
+    *,
+    include_inactive: bool = False,
+) -> List[Dict[str, Any]]:
+    """
+    Retorna projetos (sem expor hash/salt).
+    Por padrão, NÃO retorna inativos (include_inactive=False).
+    """
     db = await get_db()
-    query = {}
+    query: Dict[str, Any] = {}
     if name:
         query["name"] = {"$regex": name, "$options": "i"}  # case-insensitive
     if code:
         query["code"] = code
+    if not include_inactive:
+        query["status"] = "active"
 
     cursor = db["projects"].find(query)
     docs = await cursor.to_list(length=1000)
-
-    return [ _public_out(d) for d in docs]
-
+    return [_public_out(d) for d in docs]
 
 
 async def update_project(
@@ -111,6 +135,7 @@ async def update_project(
     api_key_plain: Optional[str] = None,
     description: Optional[str] = None,
     config: Optional[Dict[str, Any]] = None,
+    status: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Atualiza campos do projeto, garantindo unicidade de 'code'.
@@ -140,6 +165,9 @@ async def update_project(
     if config is not None:
         updates["config"] = _ensure_config_dict(config)
 
+    if status is not None:
+        updates["status"] = _normalize_status(status)
+
     if api_key_plain:
         salt, hsh = hash_secret(api_key_plain)
         updates["api_key_salt"] = salt
@@ -154,7 +182,7 @@ async def update_project(
 
     doc = await db["projects"].find_one(
         {"_id": oid},
-        {"name": 1, "code": 1, "api_key_hash": 1, "description": 1, "config": 1},
+        {"name": 1, "code": 1, "api_key_hash": 1, "description": 1, "config": 1, "status": 1, "createdAt": 1},
     )
     return _public_out(doc)
 
@@ -190,7 +218,7 @@ async def generate_api_key_for_project(project_id: str) -> str:
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    # Gera uma nova API Key
+    # Gera uma nova API Keys
     api_key = generate_uuid().replace("-", "")  # 32-char hex string
     salt, hsh = hash_secret(api_key)
 
