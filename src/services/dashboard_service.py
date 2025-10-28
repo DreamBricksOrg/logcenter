@@ -63,11 +63,9 @@ async def _build_match(
     visibility: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
-    Monta um $match consistente:
-      - project_id: ObjectId e pertencente ao conjunto de ativos (via visibility_only_active)
-      - timestamp: aplica $gte / $lte se vierem em ISO
-      - levels: aplica $in com upper-case
-      - visibility: interseção com ativos (sempre ObjectId)
+    Monta um estágio $match válido SEMPRE.
+    - Intersecciona visibilidade com projetos ATIVOS (sempre ObjectId).
+    - Se project_id for inválido ou não autorizado, retorna $match que zera o resultado.
     """
     vis = await _visibility_only_active(visibility)
 
@@ -78,11 +76,13 @@ async def _build_match(
     if project_id:
         pid = _coerce_oid(project_id)
         if pid is None:
-            return {"project_id": {"$in": []}}
+            return {"$match": {"project_id": {"$in": []}}}
+
         if "project_id" in match_stage and isinstance(match_stage["project_id"], dict) and "$in" in match_stage["project_id"]:
-            allowed = set(match_stage["project_id"]["$in"])
+            allowed: set[ObjectId] = set(match_stage["project_id"]["$in"])
             if pid not in allowed:
-                return {"project_id": {"$in": []}}
+                return {"$match": {"project_id": {"$in": []}}}
+
         match_stage["project_id"] = pid
 
     if timestamp_gte or timestamp_lte:
@@ -95,10 +95,9 @@ async def _build_match(
     if levels:
         match_stage["level"] = {"$in": [lvl.upper() for lvl in levels]}
 
-    return {"$match": match_stage} if match_stage else {"$match": {}}
+    return {"$match": match_stage}
 
 
-# ---------- Consultas de dashboard ----------
 
 async def dash_level_counts(
     *,
