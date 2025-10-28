@@ -18,3 +18,4 @@ class ProjectLoginResponse(BaseModel):
   project_id: str
   project_code: str
   role: str = "client"
+  

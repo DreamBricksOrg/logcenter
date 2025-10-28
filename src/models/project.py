@@ -1,12 +1,15 @@
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional, List, Literal
 
 PROJECT_CODE_PATTERN = r"^[a-z0-9\-_.]+$"
+ProjectStatus = Literal["active", "inactive"]
+
 
 class ProjectConfigIn(BaseModel):
     defaultTags: Optional[List[str]] = Field(default=None, description="Tags padrão a serem aplicadas")
     separator: Optional[str] = Field(default=None, description="Separador para exportação (ex: ';')")
     exportFields: Optional[List[str]] = Field(default=None, description="Campos exportados no CSV (ex: 'data.userId')")
+
 
 class ProjectCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
@@ -14,6 +17,8 @@ class ProjectCreate(BaseModel):
     description: Optional[str] = Field(default=None, max_length=300)
     config: Optional[ProjectConfigIn] = None
     api_key_plain: Optional[str] = Field(default=None, min_length=8)
+    status: Optional[ProjectStatus] = Field(default="active")
+
 
 class ProjectUpdate(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=100)
@@ -21,6 +26,8 @@ class ProjectUpdate(BaseModel):
     description: Optional[str] = Field(default=None, max_length=300)
     config: Optional[ProjectConfigIn] = None
     api_key_plain: Optional[str] = Field(default=None, min_length=8)
+    status: Optional[ProjectStatus] = None
+
 
 class ProjectOut(BaseModel):
     _id: str
@@ -30,6 +37,7 @@ class ProjectOut(BaseModel):
     description: Optional[str] = None
     config: Optional[dict] = None
     createdAt: str
+    status: ProjectStatus
 
     model_config = {
         "populate_by_name": True,
