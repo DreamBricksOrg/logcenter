@@ -1,235 +1,452 @@
-# LogCenter  v0.1.5.1-dev (Validations)
-# Setup local, Secrets e Guia da API
+# LogCenter – Central de Logs Estruturados
 
-## 1) Pré-requisitos
+O LogCenter é uma API de logging estruturado e observabilidade, desenvolvida em FastAPI com MongoDB e Structlog, voltada para centralizar e analisar logs de múltiplas aplicações.
+O sistema permite multi-tenant seguro, suporte a dashboards analíticos, exportação de logs e integração via SDK. Este README documenta arquitetura, setup local com Docker, variáveis de ambiente, autenticação unificada, endpoints (com cURLs), dashboards, exportação, pipeline e um roteiro de testes manuais, além de troubleshooting.
 
-- **Python 3.10+** e **pip**
-- **Docker** e **Docker Compose** (para rodar via containers)
-- **MongoDB Atlas** (ou outro cluster Mongo com conexão SRV)
-- (Opcional) **curl** ou **HTTP client** (Postman/Insomnia)
+---
 
-## 2) Estrutura (resumo)
+## Sumário
+
+1. Arquitetura
+2. Tecnologias
+3. Estrutura do Projeto
+4. Configuração e Deploy
+5. Variáveis de Ambiente
+6. Autenticação e Autorização
+7. Modelos Principais
+8. Endpoints Principais
+   - Auth
+   - Projetos
+   - Logs
+   - Dashboards
+9. SDK de Integração
+10. Dashboards e Filtros
+11. Exportação de Dados
+12. Pipeline e Fluxo de Deploy
+13. Testes Manuais (cURLs)
+14. Troubleshooting e Debug
+
+---
+
+## 1. Arquitetura
+
+A aplicação é modular e segue arquitetura service-based, com separação clara entre:
+
+- `api/` – rotas FastAPI (camada HTTP)
+- `models/` – modelos Pydantic
+- `services/` – lógica de negócio e persistência MongoDB
+- `core/` – configuração, autenticação/autorização e utilitários globais
+- `middleware/` – integração SDK e auditoria
+- `db/` – inicialização da conexão MongoDB
+- `util/` – helpers (datas, formatação, etc.)
+
+O sistema é preparado para ambientes multi-tenant: cada cliente possui escopo de acesso apenas aos projetos vinculados e somente a projetos com `status: "active"` participam das listagens e agregações.
+
+---
+
+## 2. Tecnologias
+
+| Componente | Versão (ref.) | Função |
+|-----------|----------------|--------|
+| Python | 3.10 | Linguagem |
+| FastAPI | 0.115.x | Framework web |
+| Uvicorn | 0.30.x | ASGI Server |
+| MongoDB | 6.x | Banco NoSQL |
+| Motor | 3.7.x | Driver assíncrono Mongo |
+| Pydantic | 2.11.x | Validação/schemas |
+| Structlog | latest | Logging estruturado |
+| OpenPyXL | 3.1.x | Exportação Excel |
+| Sentry SDK | 2.14.x | Telemetria/Tracing |
+| Docker / Compose | latest | Empacotamento e deploy |
+
+---
+
+## 3. Estrutura do Projeto
 
 ```
 src/
-  api/
-    logs.py
-    projects.py
-    users.py
-    stream.py
-  core/
-    config.py
-    auth.py
-    security.py
-  db/
-    utils.py
-  models/
-    log.py
-    project.py
-    user.py
-  services/
-    log_service.py
-    project_service.py
-    user_service.py
-    stream_service.py
-Dockerfile
-docker-compose.yml
-.env.example
+├── api/
+│   ├── auth.py
+│   ├── projects.py
+│   ├── logs.py
+│   └── dash.py
+├── core/
+│   ├── config.py
+│   ├── auth.py
+│   └── security.py
+├── db/
+│   └── utils.py
+├── middleware/
+│   └── sdk_audit.py
+├── models/
+│   ├── auth.py
+│   ├── log.py
+│   └── project.py
+├── services/
+│   ├── auth_service.py
+│   ├── dashboard_service.py
+│   ├── log_service.py
+│   ├── project_service.py
+│   └── stream_service.py
+├── util/
+│   └── helpers.py
+└── main.py
 ```
 
-## 3) Variáveis de ambiente (`.env`)
+---
 
-Copie o `.env.example` para `.env` e preencha:
+## 4. Configuração e Deploy (Local)
 
-```ini
+### 4.1 Clonar
+```bash
+git clone https://github.com/DreamBricksOrg/logcenter.git
+cd logcenter
+```
+
+### 4.2 `.env` mínimo
+```env
 ENV=dev
-APP_NAME=logcenter
-PORT=8000
+APP_PORT=8000
+MONGO_URI=mongodb://mongo:27017/logcenter
 
-# Mongo Atlas (SRV)
-MONGO_URI=mongodb+srv://<user>:<pass>@<cluster>/<db>?retryWrites=true&w=majority&appName=<app>
-MONGO_DB=logcenter_dev
-MONGO_DEBUG=false
+# SDK interno do próprio LogCenter (auto-logs)
+LOGCENTER_BASE_URL=http://localhost:8000
+LOGCENTER_PROJECT_ID=68ffd088c9a747f5faadd7fb
+LOGCENTER_API_KEY=<chave do próprio LogCenter>
+LOGCENTER_SDK_ENABLED=true
+LOGCENTER_MIN_LEVEL=INFO
 
 # Segurança
-SECRET_KEY=<uma-string-secreta-aleatória>  # usada p/ gerar "admin keys"
-REQUIRE_API_KEY=true                       # true = exige auth em produção
-SENTRY_DSN=                                # opcional, pode ficar vazio
+REQUIRE_API_KEY=false
+SECRET_KEY=<um-segredo-aleatório-hex>
 ```
 
-### Gerando uma SECRET_KEY rápida
+### 4.3 Subir com Docker
 ```bash
-python -c "import secrets; print(secrets.token_urlsafe(32))"
+docker compose build
+docker compose up -d
 ```
 
-## 4) Subindo localmente
+API: `http://localhost:8000`  
+Swagger: `http://localhost:8000/docs`
 
-### 4.1 Com Docker
+---
+
+## 5. Variáveis de Ambiente
+
+| Variável | Descrição |
+|---------|-----------|
+| `MONGO_URI` | Conexão MongoDB |
+| `ENV` | Ambiente (`dev`, `staging`, `prod`) |
+| `APP_PORT` | Porta exposta pela aplicação |
+| `LOGCENTER_SDK_ENABLED` | Habilita SDK interno para auto-log |
+| `LOGCENTER_BASE_URL` | Base URL acessível do serviço |
+| `LOGCENTER_PROJECT_ID` | Projeto do próprio LogCenter |
+| `LOGCENTER_API_KEY` | API key do SDK interno |
+| `LOGCENTER_MIN_LEVEL` | Nível mínimo de log (`INFO`, `ERROR`, etc.) |
+| `REQUIRE_API_KEY` | Exige header `X-API-Key` |
+| `SECRET_KEY` | Segredo interno para chaves efêmeras (legado) |
+
+---
+
+## 6. Autenticação e Autorização
+
+Autenticação unificada via `/auth/login` com e-mail + senha.  
+No login, é gerada/rotacionada uma `api_key` de usuário, persistida no documento `users`.
+
+Modelo de user (coleção `users`):
+```json
+{
+  "_id": "ObjectId",
+  "email": "foo@bar.com",
+  "name": "User Name",
+  "role": "admin" | "client",
+  "password_salt": "...",
+  "password_hash": "...",
+  "api_key_salt": "...",
+  "api_key_hash": "...",
+  "project_ids": ["ObjectId", "..."]
+}
+```
+
+- Admin: acesso total (ou escopo opcional se possuir `project_ids`).
+- Client: acesso somente aos `project_ids` vinculados e apenas a projetos `status: "active"`.
+- O `core/auth.enforce_visibility` transforma o principal em filtro de visibilidade sobre `project_id`.
+
+Header:
+```
+X-API-Key: <api_key_do_usuario>
+```
+
+---
+
+## 7. Modelos Principais
+
+### 7.1 Project
+```json
+{
+  "_id": "ObjectId",
+  "name": "Acme App",
+  "code": "acme",
+  "status": "active" | "inactive",
+  "description": "Texto opcional"
+}
+```
+
+### 7.2 Log
+```json
+{
+  "_id": "ObjectId",
+  "uploadedAt": "2025-10-28T14:00:00Z",
+  "timestamp": "2025-10-28T13:59:59Z",
+  "status": "ok",
+  "level": "INFO",
+  "message": "Request completed",
+  "tags": ["auth", "success"],
+  "data": {"ip": "127.0.0.1"},
+  "request_id": "abc-123",
+  "project_id": "ObjectId"
+}
+```
+
+---
+
+## 8. Endpoints Principais
+
+### 8.1 Auth
+
+#### `POST /auth/login`
+Login unificado para admins e clientes.
 ```bash
-docker compose up -d --build
-# API em http://localhost:8000
-# Docs em http://localhost:8000/docs
+curl -X POST http://localhost:8000/auth/login   -H "Content-Type: application/json"   -d '{"email":"admin@example.com","password":"31773177"}'
+```
+Resposta:
+```json
+{
+  "api_key": "...",
+  "role": "admin",
+  "name": "Admin",
+  "user_id": "ObjectId",
+  "project_ids": [],
+  "project_codes": []
+}
 ```
 
-### 4.2 Sem Docker (bare Python)
+### 8.2 Projetos
+
+#### `POST /projects/` (admin)
 ```bash
-python -m venv .venv
-source .venv/bin/activate     # (Windows: .venv\Scripts\activate)
-pip install -r requirements.txt
-uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
+curl -X POST http://localhost:8000/projects/   -H "X-API-Key: <ADMIN_KEY>"   -H "Content-Type: application/json"   -d '{"name":"Acme App","code":"acme","status":"active"}'
 ```
 
-## 5) Autenticação
+#### `GET /projects/`
+Lista projetos. Apenas ativos para clients. Admin pode ver todos.
+```bash
+curl -L "http://localhost:8000/projects/"   -H "X-API-Key: <API_KEY>"
+```
 
-Há **dois** modos:
+#### `PATCH /projects/{id}`
+Atualiza campos, ex.: status.
+```bash
+curl -X PATCH http://localhost:8000/projects/<ID>   -H "X-API-Key: <ADMIN_KEY>"   -H "Content-Type: application/json"   -d '{"status":"inactive"}'
+```
 
-1) **Admin Key (header)**: uma chave “de operador” para endpoints administrativos (CRUD de projetos/usuários).  
-   - Gerar uma admin key **a partir do `SECRET_KEY`**:
-     ```bash
-     python gen_admin_key.py
-     ```
-   - Em chamadas admin, envie:
-     ```
-     X-Admin-Key: <ADMIN_KEY>
-     ```
+### 8.3 Logs
 
-2) **API Key do Projeto**: clientes enviam `X-API-Key` gerada a partir de uma “api_key_plain” definida no **projeto** (hash+salt guardados no banco).
-   - Para criar/atualizar projeto com `api_key_plain`, use os endpoints de Projetos (abaixo).
-   - Em chamadas do cliente (ex.: postar logs), envie:
-     ```
-     X-API-Key: <api_key_plain_do_projeto>
-     ```
+#### `POST /logs/`
+Cria log.
+```bash
+curl -X POST http://localhost:8000/logs/   -H "X-API-Key: <CLIENT_KEY>"   -H "Content-Type: application/json"   -d '{
+        "project_id":"<PROJECT_ID>",
+        "status":"ok",
+        "level":"INFO",
+        "message":"hello world",
+        "tags":["demo"],
+        "data":{"endpoint":"/demo","userId":"cliente"}
+      }'
+```
 
-> Em produção, deixe `REQUIRE_API_KEY=true`. Em dev você pode flexibilizar.
+#### `GET /logs/`
+Lista logs, respeitando visibilidade e projetos ativos.
+```bash
+curl -L "http://localhost:8000/logs/?project_id=<PROJECT_ID>"   -H "X-API-Key: <API_KEY>"
+```
 
-## 6) Fluxo inicial
+#### `GET /logs/levels`
+Contagem por nível (versão nos dashboards é preferível).
 
-## Filtros suportados
+#### `GET /logs/export?format=xlsx|csv`
+Exporta logs em planilha.
+```bash
+curl -L "http://localhost:8000/logs/export?format=xlsx"   -H "X-API-Key: <API_KEY>" -o logs.xlsx
+```
 
-Todos os endpoints de listagem e dashboard aceitam filtros via query string com os operadores:
+### 8.4 Dashboards
 
-| Operador      | Exemplo                          | Descrição                         |
-|---------------|----------------------------------|-----------------------------------|
-| `campo=valor` | `level=INFO`                     | igualdade                         |
-| `__in`        | `level__in=INFO&level__in=ERROR` | qualquer um da lista              |
-| `__gte`       | `timestamp__gte=2025-01-01`      | maior ou igual                    |
-| `__lte`       | `timestamp__lte=2025-01-10`      | menor ou igual                    |
-| `__regex`     | `message__regex=^Falha`          | expressão regular (regex Mongo)   |
+#### `GET /dash/levels/`
+Contagem de logs por nível (filtrados por projetos ativos e visibilidade).
+```bash
+curl -L "http://localhost:8000/dash/levels/?project_id=<PROJECT_ID>"   -H "X-API-Key: <API_KEY>"
+```
 
-1) **Gerar ADMIN_KEY**:
+#### `GET /dash/top-users/`
+Top usuários por `data.userId`.
+```bash
+curl -L "http://localhost:8000/dash/top-users/?timestamp__gte=2025-10-01T00:00:00Z"   -H "X-API-Key: <API_KEY>"
+```
+
+#### `GET /dash/top-endpoints/`
+Top endpoints por `data.endpoint`.
+```bash
+curl -L "http://localhost:8000/dash/top-endpoints/?timestamp__gte=2025-10-01T00:00:00Z"   -H "X-API-Key: <API_KEY>"
+```
+
+---
+
+## 9. SDK de Integração
+
+Repositório: https://github.com/DreamBricksOrg/logcenter_sdk
+
+Exemplo mínimo (adaptado ao projeto):
+```python
+from log_center_sdk.log_sender import LogCenter
+
+logger = LogCenter(
+    base_url="http://localhost:8000",
+    api_key="<LOGCENTER_API_KEY>",
+    project_id="<PROJECT_ID>"
+)
+
+logger.info("user_login_success", data={"user": "demo"})
+logger.error("payment_failed", data={"order_id": "123", "reason": "card_declined"})
+```
+
+O LogCenter utiliza o SDK internamente para registrar eventos do próprio serviço (startup, shutdown, 5xx, etc.).
+
+---
+
+## 10. Dashboards e Filtros
+
+- Dashboards usam pipelines de agregação Mongo: `$match` (com visibilidade e ativos), `$group`, `$sort` e `$project`.
+- Níveis são normalizados para maiúsculas.
+- `data.userId` e `data.endpoint` são considerados apenas quando existem e não são nulos.
+- Sempre há interseção com projetos ativos e com o escopo do usuário (`enforce_visibility`).
+
+---
+
+## 11. Exportação de Dados
+
+- `GET /logs/export?format=csv`
+- `GET /logs/export?format=xlsx`
+
+Colunas: `_id, uploadedAt, timestamp, status, level, message, tags, data, request_id, project_id`.
+
+---
+
+## 12. Pipeline e Fluxo de Deploy (Visão Geral)
+
+Mesmo usando docker-compose local, o projeto está pronto para CI/CD simples:
+
+1. Build
    ```bash
-   python gen_admin_key.py
+   docker build -t logcenter-api .
    ```
 
-2) **Criar um projeto (admin)**:
+2. Push (registro remoto, opcional)
    ```bash
-   curl -X POST http://localhost:8000/projects/      -H "Content-Type: application/json"      -H "X-Admin-Key: <ADMIN_KEY>"      -d '{
-       "name": "Skyn Totem",
-       "code": "skyn_totem",
-       "api_key_plain": "skyn-secret-123"
-     }'
+   docker tag logcenter-api registry.example.com/logcenter:latest
+   docker push registry.example.com/logcenter:latest
    ```
 
-3) **Postar log (cliente)**:
-   ```bash
-   curl -X POST http://localhost:8000/logs/      -H "Content-Type: application/json"      -H "X-API-Key: skyn-secret-123"      -d '{
-       "project": "68c80f558918c510d2ca3eb4",
-       "status": "INFO",
-       "level": "info",
-       "message": "User logged in",
-       "tags": ["auth","user"],
-       "data": {"userId":"abc123","ip":"192.168.0.10"},
-       "request_id": "9c7f4e0f-..."
-     }'
-   ```
+3. Deploy remoto (EC2, por exemplo)
+   - `docker compose pull`
+   - `docker compose up -d`
+   - Health-check e logs pelo próprio LogCenter
 
-4) **Listar logs (admin)**:
-   ```bash
-   curl -H "X-Admin-Key: <ADMIN_KEY>" http://localhost:8000/logs/
-   ```
+4. Variáveis em Secrets da pipeline (CI)
+   - `MONGO_URI`, `SECRET_KEY`, `REQUIRE_API_KEY`, etc.
 
-5) **Exportar CSV**
-  ```bash
-  curl -H "X-API-Key: abc123" "http://localhost:8000/logs/export?format=csv" --output logs.csv
-  ```
+---
 
-6) **Exportar Excel**
-  ```bash
-  curl -H "X-API-Key: abc123" "http://localhost:8000/logs/export?format=xlsx" --output logs.xlsx
-  ```
+## 13. Testes Manuais (cURLs)
 
-7) **Dashboard: níveis**
-  ```bash
-  curl -H "X-API-Key: abc123" "http://localhost:8000/dash/levels?timestamp__gte=2025-01-01"
-  ```
+Fluxo completo:
 
-8) **Dashboard: top users**
-  ```bash
-  curl -H "X-API-Key: abc123" "http://localhost:8000/dash/top-users"
-  ```
-
-## Índices recomendados (MongoDB)
-
-```js
-db.logs.createIndex({ project_id: 1, timestamp: -1 });
-db.logs.createIndex({ level: 1, timestamp: -1 });
-db.logs.createIndex({ "data.userId": 1 });
-db.logs.createIndex({ "data.endpoint": 1 });
-
-## 7) Endpoints da API (resumo)
-
-### Logs (`/logs`)
-- `POST /logs/`
-- `GET /logs/?project=<oid>`
-- `GET /logs/latest?project=<oid>`
-- `GET /logs/levels?project=<oid>`
-
-### Projetos (`/projects`)
-- `POST /projects/`
-- `GET /projects/`
-- `PATCH /projects/{project_id}`
-- `DELETE /projects/{project_id}`
-
-### Usuários (`/users`)
-- CRUD admin (`email`, `name`, `role`, `project_codes`, `password_plain`).
-
-### Streaming (tempo real)
-- WebSocket `/ws/{project_code}` transmite logs em tempo real.
-
-## 8) CI/CD — Secrets do GitHub
-
-### 8.1 Secrets necessários (Prod)
-| Nome | Descrição |
-|------|------------|
-| `SSH_KEY` | Chave privada SSH |
-| `HOST_PROD` | IP/DNS Prod |
-| `USER_PROD` | Usuário SSH |
-| `PORT` | Porta SSH |
-| `REMOTE_PATH_PROD` | Caminho destino |
-| `KNOWN_HOSTS_PROD` | Saída de ssh-keyscan |
-| `ENV_PROD` | Valor ENV prod |
-
-### 8.2 Secrets necessários (Dev)
-| Nome | Descrição |
-|------|------------|
-| `HOST_DEV` | IP/DNS Dev |
-| `USER_DEV` | Usuário SSH |
-| `REMOTE_PATH_DEV` | Caminho destino |
-| `KNOWN_HOSTS_DEV` | ssh-keyscan Dev |
-| `ENV_DEV` | Valor ENV dev |
-| `SSH_KEY` / `PORT` | Reuso |
-
-### 8.3 Geração de Tag
 ```bash
-git checkout main
-git pull origin main
-git tag -a v0.1.5 -m "Release 0.1.5"
-git push origin v0.1.5
+BASE="http://localhost:8000"
+
+# 1) Login admin
+ADMIN_EMAIL="admin@example.com"
+ADMIN_PASS="31773177"
+ADMIN_LOGIN=$(curl -sS -X POST "$BASE/auth/login" -H "Content-Type: application/json" -d "{"email":"$ADMIN_EMAIL","password":"$ADMIN_PASS"}")
+ADMIN_KEY=$(echo "$ADMIN_LOGIN" | jq -r '.api_key')
+
+# 2) Criar projetos (ativo e inativo)
+P1=$(curl -sS -L -X POST "$BASE/projects/" -H "Content-Type: application/json" -H "X-API-Key: $ADMIN_KEY" -d '{"name":"Acme App","code":"acme","status":"active","description":"Projeto ativo"}')
+P1_ID=$(echo "$P1" | jq -r '._id // .id')
+
+P2=$(curl -sS -L -X POST "$BASE/projects/" -H "Content-Type: application/json" -H "X-API-Key: $ADMIN_KEY" -d '{"name":"Legacy App","code":"legacy","status":"inactive","description":"Projeto inativo"}')
+P2_ID=$(echo "$P2" | jq -r '._id // .id')
+
+# 3) Criar usuário client e vincular P1
+CLIENT_CREATE=$(curl -sS -L -X POST "$BASE/users/" -H "Content-Type: application/json" -H "X-API-Key: $ADMIN_KEY" -d "{"email":"cliente@example.com","name":"Cliente Demo","role":"client","password_plain":"abc123","project_ids":["$P1_ID"]}")
+CLIENT_ID=$(echo "$CLIENT_CREATE" | jq -r '._id // .id // .user_id')
+
+# 4) Login client
+CLIENT_LOGIN=$(curl -sS -X POST "$BASE/auth/login" -H "Content-Type: application/json" -d '{"email":"cliente@example.com","password":"abc123"}')
+CLIENT_KEY=$(echo "$CLIENT_LOGIN" | jq -r '.api_key')
+
+# 5) Criar log no projeto ativo (P1)
+curl -sS -L -X POST "$BASE/logs/" -H "Content-Type: application/json" -H "X-API-Key: $CLIENT_KEY" -d "{"project_id":"$P1_ID","status":"ok","level":"INFO","message":"hello from client","tags":["demo"],"data":{"endpoint":"/demo","userId":"cliente"}}"
+
+# 6) Tentar criar log no projeto inativo (P2) -> deve falhar
+curl -sS -L -X POST "$BASE/logs/" -H "Content-Type: application/json" -H "X-API-Key: $CLIENT_KEY" -d "{"project_id":"$P2_ID","status":"err","level":"ERROR","message":"should not insert"}"
+
+# 7) Listagens e dashboards
+curl -sS -L "$BASE/logs/?project_id=$P1_ID" -H "Accept: application/json" -H "X-API-Key: $ADMIN_KEY" | jq '.[0:3]'
+curl -sS -L "$BASE/logs/?project_id=$P2_ID" -H "Accept: application/json" -H "X-API-Key: $ADMIN_KEY" | jq
+curl -sS -L "$BASE/logs/" -H "Accept: application/json" -H "X-API-Key: $CLIENT_KEY" | jq 'if type=="array" then .[0:3] else . end'
+
+curl -sS -L "$BASE/dash/levels/" -H "Accept: application/json" -H "X-API-Key: $ADMIN_KEY" | jq
+curl -sS -L "$BASE/dash/levels/?project_id=$P1_ID" -H "Accept: application/json" -H "X-API-Key: $CLIENT_KEY" | jq
 ```
 
-## 9) Troubleshooting
+---
 
-- “Invalid API key” → Gere e envie `X-Admin-Key` ou `X-API-Key` válida.
-- “description/config null” → Rebuild do container.
-- “Permission denied (publickey)” → Corrija `SSH_KEY`.
-- “Could not resolve hostname” → `HOST_*` vazio.
+## 14. Troubleshooting e Debug
+
+1) Redirecionamento 307  
+Causa: endpoints de coleção exigem barra final.  
+Solução: usar `-L` no curl ou chamar `/logs/`, `/projects/`, `/dash/levels/` etc.
+
+2) 403 Forbidden - "No project bound to user"  
+Causa: client sem `project_ids` ativos ou vazios.  
+Solução: vincular projeto ativo ao usuário e refazer login.
+
+3) 422 Unprocessable Entity ao criar log  
+Causa: body faltando campos obrigatórios (ex.: `status`).  
+Solução: enviar `status`, `level`, `message` e `project_id` válidos.
+
+4) Logs não aparecem  
+Causa: projeto está `"inactive"` ou filtro/visibilidade restringiu.  
+Solução: ativar projeto com `PATCH /projects/{id}` e revisar filtros.
+
+5) AtlasError: "project_id is not allowed" nos dashboards  
+Causa: estágio do pipeline não era `{ "$match": ... }`.  
+Solução: usar a versão corrigida do `_build_match` que retorna sempre `$match`.
+
+6) SDK não envia logs  
+Causa: `LOGCENTER_SDK_ENABLED=false`, BASE_URL incorreta ou loopback.  
+Solução: confirmar `LOGCENTER_BASE_URL` e `LOGCENTER_API_KEY`, ativar o SDK.
+
+7) Debug local rápido  
+```bash
+docker compose logs -f api
+docker compose exec api bash
+python -m uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+---
+
+Mantenedor: Dream Bricks  
+Repositório: https://github.com/DreamBricksOrg/logcenter
