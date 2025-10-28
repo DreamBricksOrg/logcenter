@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict
 
+
 class LogCreate(BaseModel):
     project_id: str = Field(..., min_length=24, max_length=24, description="Mongo ObjectId (hex)")
     status: str = Field(..., min_length=1, description="Status textual (ex: 200 - OK)")
@@ -18,6 +19,7 @@ class LogCreate(BaseModel):
         "populate_by_name": True,
         "extra": "ignore",
     }
+
 
 class LogModel(BaseModel):
     _id: str
