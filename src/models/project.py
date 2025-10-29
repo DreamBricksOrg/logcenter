@@ -30,7 +30,7 @@ class ProjectUpdate(BaseModel):
 
 
 class ProjectOut(BaseModel):
-    _id: str
+    id: str = Field(alias="_id")
     name: str
     code: str
     has_api_key: bool
