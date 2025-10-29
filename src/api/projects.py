@@ -8,7 +8,7 @@ from services import project_service
 router = APIRouter(prefix="/projects", tags=["projects"])
 
 
-@router.post("/", response_model=ProjectOut, status_code=201)
+@router.post("/", response_model=ProjectOut, response_model_by_alias=True, status_code=201)
 async def create_project(payload: ProjectCreate, principal=Depends(require_principal)):
     if settings.REQUIRE_API_KEY and principal.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin required")
@@ -25,7 +25,7 @@ async def create_project(payload: ProjectCreate, principal=Depends(require_princ
         raise HTTPException(status_code=409 if "exists" in str(e) else 400, detail=str(e))
 
 
-@router.get("/", response_model=List[ProjectOut])
+@router.get("/", response_model=List[ProjectOut], response_model_by_alias=True)
 async def list_projects(
     principal=Depends(require_principal),
     name: Optional[str] = Query(default=None),
@@ -40,7 +40,7 @@ async def list_projects(
     return await project_service.list_projects(name=name, code=code, include_inactive=allow_inactive)
 
 
-@router.patch("/{project_id}", response_model=ProjectOut)
+@router.patch("/{project_id}", response_model=ProjectOut, response_model_by_alias=True)
 async def update_project(project_id: str, payload: ProjectUpdate, principal=Depends(require_principal)):
     if settings.REQUIRE_API_KEY and principal.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin required")
