@@ -11,7 +11,7 @@ from services import auth_service
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-@router.post("/login", response_model=UnifiedLoginResponse, summary="Unified login (admin or client) with email+password")
+@router.post("/login", response_model=UnifiedLoginResponse, summary="Login unificado (admin ou client)")
 async def unified_login(payload: UnifiedLoginRequest):
     result = await auth_service.login_user(payload.email, payload.password)
     if not result:

@@ -20,7 +20,8 @@ def require_api_key(x_api_key: Optional[str] = Header(default=None, convert_unde
 async def create_log(payload: LogCreate, ok: bool = Depends(require_api_key)):
     try:
         log_id = await log_service.create_log(
-            project=payload.project,
+            project_id=payload.project_id,
+            status=payload.status,
             level=payload.level,
             message=payload.message,
             tags=payload.tags,

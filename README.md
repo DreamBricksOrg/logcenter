@@ -283,6 +283,14 @@ curl -L "http://localhost:8000/logs/export?format=xlsx"   -H "X-API-Key: <API_KE
 
 ### 8.4 Dashboards
 
+O módulo `/dash/` provê endpoints agregadores sobre os logs, utilizados pelos painéis administrativos.
+
+Todos exigem autenticação via **API Key** (do admin ou de um cliente com acesso ao projeto) e respeitam automaticamente:
+
+* **visibilidade** (restrição de projetos do usuário);
+* **status ativo** dos projetos;
+* **janela temporal opcional** (`timestamp_gte`, `timestamp_lte`).
+
 #### `GET /dash/levels/`
 Contagem de logs por nível (filtrados por projetos ativos e visibilidade).
 ```bash
@@ -299,6 +307,46 @@ curl -L "http://localhost:8000/dash/top-users/?timestamp__gte=2025-10-01T00:00:0
 Top endpoints por `data.endpoint`.
 ```bash
 curl -L "http://localhost:8000/dash/top-endpoints/?timestamp__gte=2025-10-01T00:00:00Z"   -H "X-API-Key: <API_KEY>"
+```
+
+#### `GET /dash/top-data/keys`
+Retorna a contagem das **chaves** existentes dentro de `data`.
+```bash
+# 1) Top chaves de todo o período
+curl -s "$BASE/dash/top-data/keys?limit=20" \
+  -H "X-API-Key: $KEY" | jq
+
+# 2) Somente de um projeto e janela temporal (ISO-8601)
+curl -s "$BASE/dash/top-data/keys?project_id=$P1_ID&timestamp__gte=2025-11-02T00:00:00Z&timestamp__lte=2025-11-04T00:00:00Z&limit=20" \
+  -H "X-API-Key: $KEY" | jq
+```
+
+#### `GET /dash/top-data/values`
+Conta **pares (item, valor)** encontrados em `data`.
+```bash
+# 1) Top pares (item+valor) de todo o período
+curl -s "$BASE/dash/top-data/values?limit=20" \
+  -H "X-API-Key: $KEY" | jq
+
+# 2) Top valores para UMA chave específica (ex.: method)
+curl -s "$BASE/dash/top-data/values?project_id=$P1_ID&item=method&limit=20" \
+  -H "X-API-Key: $KEY" | jq
+
+# 3) Com janela temporal (últimos 2 dias, por exemplo)
+curl -s "$BASE/dash/top-data/values?project_id=$P1_ID&timestamp__gte=2025-11-02T00:00:00Z&timestamp__lte=2025-11-04T00:00:00Z&limit=20" \
+  -H "X-API-Key: $KEY" | jq
+```
+
+#### `GET /dash/top-tags`
+Conta as ocorrências dos valores de `tags` dentro dos logs (campo `tags[]` em cada documento).
+```bash
+# Top 10 tags globais
+curl -s "$BASE/dash/top-tags?limit=10" \
+  -H "X-API-Key: $KEY" | jq
+
+# Somente para o projeto ativo atual
+curl -s "$BASE/dash/top-tags?project_id=$P1_ID&timestamp_gte=2025-11-01T00:00:00Z" \
+  -H "X-API-Key: $KEY" | jq
 ```
 
 ---
