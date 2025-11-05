@@ -2,200 +2,326 @@ from __future__ import annotations
 
 from typing import Optional, List, Dict, Any
 from bson import ObjectId
+
 from db.utils import get_db
 
 
-async def _active_project_ids() -> List[ObjectId]:
+async def _active_project_ids(db) -> List[str]:
+    cur = db["projects"].find({"status": "active"}, {"_id": 1})
+    return [str(d["_id"]) async for d in cur]
+
+
+async def _restrict_to_active_and_visibility(
+    visibility: Optional[Dict[str, Any]],
+    project_id: Optional[str],
+) -> Dict[str, Any]:
+    """
+    $match com:
+      - Apenas projetos ATIVOS.
+      - Restrições de visibilidade (project_ids permitidos).
+      - Opcionalmente força um único project_id (se ativo/visível).
+    """
     db = await get_db()
-    cursor = db["projects"].find({"status": "active"}, {"_id": 1})
-    return [doc["_id"] async for doc in cursor]
-
-def _coerce_oid(value: Any) -> Optional[ObjectId]:
-    try:
-        return ObjectId(str(value))
-    except Exception:
-        return None
-
-async def _visibility_only_active(visibility: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-    """
-    Retorna um filtro de visibilidade SEMPRE restrito a projetos ATIVOS.
-    - Sempre devolve project_id como ObjectId (não string).
-    - Se 'visibility' trouxer project_id (single ou $in), cruza com ativos.
-    """
-    active_ids = await _active_project_ids()
+    active_ids = await _active_project_ids(db)
     if not active_ids:
         return {"project_id": {"$in": []}}
 
-    if not visibility:
-        return {"project_id": {"$in": active_ids}}
+    match: Dict[str, Any] = {"project_id": {"$in": [ObjectId(x) for x in active_ids]}}
 
-    vis = dict(visibility)
-    if "project_id" in vis:
-        val = vis["project_id"]
-
-        if isinstance(val, dict) and "$in" in val:
-            converted: List[ObjectId] = []
-            for x in val["$in"]:
-                oid = _coerce_oid(x)
-                if oid is not None:
-                    converted.append(oid)
-            final_in = [oid for oid in converted if oid in set(active_ids)]
-            vis["project_id"] = {"$in": final_in}
-            return vis
-
-        oid = _coerce_oid(val)
-        if oid is None or oid not in set(active_ids):
-            return {"project_id": {"$in": []}}
-        vis["project_id"] = oid
-        return vis
-
-    # Sem project_id explícito: injeta $in com ativos
-    vis["project_id"] = {"$in": active_ids}
-    return vis
-
-
-async def _build_match(
-    *,
-    project_id: Optional[str] = None,
-    timestamp_gte: Optional[str] = None,
-    timestamp_lte: Optional[str] = None,
-    levels: Optional[List[str]] = None,
-    visibility: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
-    """
-    Monta um estágio $match válido SEMPRE.
-    - Intersecciona visibilidade com projetos ATIVOS (sempre ObjectId).
-    - Se project_id for inválido ou não autorizado, retorna $match que zera o resultado.
-    """
-    vis = await _visibility_only_active(visibility)
-
-    match_stage: Dict[str, Any] = {}
-    if vis:
-        match_stage.update(vis)
+    if visibility and "project_id" in visibility:
+        vis = visibility["project_id"]
+        if isinstance(vis, dict) and "$in" in vis:
+            # restringe ao cruzamento: visíveis ∩ ativos
+            allowed = [ObjectId(x) for x in vis["$in"] if x in active_ids]
+            match["project_id"] = {"$in": allowed}
+        else:
+            if str(vis) not in active_ids:
+                return {"project_id": {"$in": []}}
+            match["project_id"] = ObjectId(str(vis))
 
     if project_id:
-        pid = _coerce_oid(project_id)
-        if pid is None:
-            return {"$match": {"project_id": {"$in": []}}}
+        if project_id not in active_ids:
+            return {"project_id": {"$in": []}}
+        # cruza se já existir $in
+        if isinstance(match.get("project_id"), dict) and "$in" in match["project_id"]:
+            current = set(match["project_id"]["$in"])
+            only = {ObjectId(project_id)}
+            inter = list(current & only)
+            match["project_id"] = {"$in": inter}
+        else:
+            match["project_id"] = ObjectId(project_id)
 
-        if "project_id" in match_stage and isinstance(match_stage["project_id"], dict) and "$in" in match_stage["project_id"]:
-            allowed: set[ObjectId] = set(match_stage["project_id"]["$in"])
-            if pid not in allowed:
-                return {"$match": {"project_id": {"$in": []}}}
+    return match
 
-        match_stage["project_id"] = pid
 
-    if timestamp_gte or timestamp_lte:
-        match_stage["timestamp"] = {}
-        if timestamp_gte:
-            match_stage["timestamp"]["$gte"] = timestamp_gte
-        if timestamp_lte:
-            match_stage["timestamp"]["$lte"] = timestamp_lte
-
-    if levels:
-        match_stage["level"] = {"$in": [lvl.upper() for lvl in levels]}
-
-    return {"$match": match_stage}
-
+def _apply_time_window(match: Dict[str, Any], gte: Optional[str], lte: Optional[str]) -> Dict[str, Any]:
+    if gte or lte:
+        cond: Dict[str, Any] = {}
+        if gte:
+            cond["$gte"] = gte
+        if lte:
+            cond["$lte"] = lte
+        match["timestamp"] = cond
+    return match
 
 
 async def dash_level_counts(
-    *,
-    project_id: Optional[str] = None,
-    timestamp_gte: Optional[str] = None,
-    timestamp_lte: Optional[str] = None,
-    levels: Optional[List[str]] = None,
-    visibility: Optional[Dict[str, Any]] = None,
+    project_id: Optional[str],
+    timestamp_gte: Optional[str],
+    timestamp_lte: Optional[str],
+    levels: Optional[List[str]],
+    limit: int,
+    visibility: Optional[Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
     """
     Conta logs agrupados por level (UPPER), respeitando:
-      - projetos ATIVOS,
-      - visibilidade,
-      - filtros opcionais de project_id e tempo.
+      - projetos ATIVOS, visibilidade, janela temporal.
+      - filtro opcional de levels (case-insensitive).
     """
     db = await get_db()
-    pipeline: List[Dict[str, Any]] = []
+    match = await _restrict_to_active_and_visibility(visibility, project_id)
+    match = _apply_time_window(match, timestamp_gte, timestamp_lte)
 
-    match_stage = await _build_match(
-        project_id=project_id,
-        timestamp_gte=timestamp_gte,
-        timestamp_lte=timestamp_lte,
-        levels=levels,
-        visibility=visibility,
-    )
-    pipeline.append(match_stage)
+    if levels:
+        match["level"] = {"$in": [lvl.upper() for lvl in levels]}
 
-    pipeline += [
-        {"$addFields": {"_norm_level": {"$toUpper": "$level"}}},
-        {"$group": {"_id": "$_norm_level", "count": {"$sum": 1}}},
-        {"$sort": {"count": -1}},
-        {"$project": {"level": "$_id", "count": 1, "_id": 0}},
-        {"$limit": 50},
+    pipeline = [
+        {"$match": match},
+        {"$project": {"level_norm": {"$toUpper": {"$ifNull": ["$level", "UNKNOWN"]}}}},
+        {"$group": {"_id": "$level_norm", "count": {"$sum": 1}}},
+        {"$project": {"_id": 0, "level": "$_id", "count": 1}},
+        {"$sort": {"count": -1, "level": 1}},
+        {"$limit": int(limit)},
     ]
     return [doc async for doc in db["logs"].aggregate(pipeline)]
 
 
 async def dash_top_users(
-    *,
-    project_id: Optional[str] = None,
-    timestamp_gte: Optional[str] = None,
-    timestamp_lte: Optional[str] = None,
-    visibility: Optional[Dict[str, Any]] = None,
+    project_id: Optional[str],
+    timestamp_gte: Optional[str],
+    timestamp_lte: Optional[str],
+    limit: int,
+    visibility: Optional[Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
     """
-    Top usuários por contagem (usa data.userId), respeitando ativos/visibilidade e tempo.
-    Ignora userId nulo.
+    Conta usuários. Considera: user_email, user, user.id, actor, actor.email.
     """
     db = await get_db()
-    pipeline: List[Dict[str, Any]] = []
+    match = await _restrict_to_active_and_visibility(visibility, project_id)
+    match = _apply_time_window(match, timestamp_gte, timestamp_lte)
 
-    match_stage = await _build_match(
-        project_id=project_id,
-        timestamp_gte=timestamp_gte,
-        timestamp_lte=timestamp_lte,
-        levels=None,
-        visibility=visibility,
-    )
-    pipeline.append(match_stage)
+    user_expr = {
+        "$ifNull": [
+            "$user_email",
+            {"$ifNull": ["$user", {"$ifNull": ["$user.id", {"$ifNull": ["$actor", {"$ifNull": ["$actor.email", "unknown"]}]}]}]},
+        ]
+    }
 
-    pipeline += [
-        {"$match": {"data.userId": {"$exists": True, "$ne": None}}},
-        {"$group": {"_id": "$data.userId", "count": {"$sum": 1}}},
-        {"$sort": {"count": -1}},
-        {"$project": {"userId": "$_id", "count": 1, "_id": 0}},
-        {"$limit": 50},
+    pipeline = [
+        {"$match": match},
+        {"$project": {"user": user_expr}},
+        {"$group": {"_id": "$user", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1, "_id": 1}},
+        {"$limit": int(limit)},
+        {"$project": {"_id": 0, "user": "$_id", "count": 1}},
     ]
     return [doc async for doc in db["logs"].aggregate(pipeline)]
 
 
 async def dash_top_endpoints(
-    *,
-    project_id: Optional[str] = None,
-    timestamp_gte: Optional[str] = None,
-    timestamp_lte: Optional[str] = None,
-    visibility: Optional[Dict[str, Any]] = None,
+    project_id: Optional[str],
+    timestamp_gte: Optional[str],
+    timestamp_lte: Optional[str],
+    limit: int,
+    visibility: Optional[Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
     """
-    Top endpoints por contagem (usa data.endpoint), respeitando ativos/visibilidade e tempo.
-    Ignora endpoint nulo.
+    Conta endpoints/URLs. Tenta em ordem:
+      - Campos top-level: endpoint, path, request.path, url, request.url
+      - Campos em data.*:  data.endpoint, data.path, data.request.path, data.url, data.request.url
+      - Fallback: primeiro valor string em data que pareça endpoint (regex ^/ ou ^https?://)
+    Normaliza: minúsculas e sem query string.
     """
     db = await get_db()
-    pipeline: List[Dict[str, Any]] = []
+    match = await _restrict_to_active_and_visibility(visibility, project_id)
+    match = _apply_time_window(match, timestamp_gte, timestamp_lte)
 
-    match_stage = await _build_match(
-        project_id=project_id,
-        timestamp_gte=timestamp_gte,
-        timestamp_lte=timestamp_lte,
-        levels=None,
-        visibility=visibility,
-    )
-    pipeline.append(match_stage)
+    candidate = {
+        "$ifNull": [
+            "$endpoint",
+            {"$ifNull": [
+                "$path",
+                {"$ifNull": [
+                    "$request.path",
+                    {"$ifNull": [
+                        "$url",
+                        {"$ifNull": [
+                            "$request.url",
+                            {"$ifNull": [
+                                "$data.endpoint",
+                                {"$ifNull": [
+                                    "$data.path",
+                                    {"$ifNull": [
+                                        "$data.request.path",
+                                        {"$ifNull": [
+                                            "$data.url",
+                                            {"$ifNull": ["$data.request.url", None]}
+                                        ]}
+                                    ]}
+                                ]}
+                            ]}
+                        ]}
+                    ]}
+                ]}
+            ]}
+        ]
+    }
 
-    pipeline += [
-        {"$match": {"data.endpoint": {"$exists": True, "$ne": None}}},
-        {"$group": {"_id": "$data.endpoint", "count": {"$sum": 1}}},
-        {"$sort": {"count": -1}},
-        {"$project": {"endpoint": "$_id", "count": 1, "_id": 0}},
-        {"$limit": 50},
+    fallback_from_data = {
+        "$let": {
+            "vars": {
+                "arr": {"$objectToArray": {"$ifNull": ["$data", {}]}},
+                "hits": {
+                    "$filter": {
+                        "input": {"$objectToArray": {"$ifNull": ["$data", {}]}},
+                        "as": "kv",
+                        "cond": {
+                            "$and": [
+                                {"$eq": [{"$type": "$$kv.v"}, "string"]},
+                                {"$or": [
+                                    {"$regexMatch": {"input": "$$kv.v", "regex": r"^/"}},
+                                    {"$regexMatch": {"input": "$$kv.v", "regex": r"^https?://"}}
+                                ]}
+                            ]
+                        },
+                    }
+                },
+            },
+            "in": {"$cond": [
+                {"$gt": [{"$size": "$$hits"}, 0]},
+                {"$first": {"$map": {"input": "$$hits", "as": "h", "in": "$$h.v"}}},
+                None
+            ]}
+        }
+    }
+
+    endpoint_expr = {
+        "$ifNull": [
+            candidate,
+            {"$ifNull": [fallback_from_data, "unknown"]}
+        ]
+    }
+
+    normalized = {
+        "$toLower": {
+            "$let": {
+                "vars": {"raw": endpoint_expr},
+                "in": {"$first": {"$split": ["$$raw", "?"]}}
+            }
+        }
+    }
+
+    pipeline = [
+        {"$match": match},
+        {"$project": {"endpoint": normalized}},
+        {"$group": {"_id": "$endpoint", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1, "_id": 1}},
+        {"$limit": int(limit)},
+        {"$project": {"_id": 0, "endpoint": "$_id", "count": 1}},
     ]
+
+    return [doc async for doc in db["logs"].aggregate(pipeline)]
+
+
+async def dash_top_tags(
+    project_id: Optional[str],
+    timestamp_gte: Optional[str],
+    timestamp_lte: Optional[str],
+    limit: int,
+    visibility: Optional[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """
+    Conta tags. Garante array com ifNull e filtra tipos indevidos.
+    """
+    db = await get_db()
+    match = await _restrict_to_active_and_visibility(visibility, project_id)
+    match = _apply_time_window(match, timestamp_gte, timestamp_lte)
+
+    pipeline = [
+        {"$match": match},
+        {"$project": {"tags": {"$ifNull": ["$tags", []]}}},
+        {"$unwind": "$tags"},
+        {"$match": {"tags": {"$type": "string"}}},
+        {"$group": {"_id": "$tags", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1, "_id": 1}},
+        {"$limit": int(limit)},
+        {"$project": {"_id": 0, "tag": "$_id", "count": 1}},
+    ]
+    return [doc async for doc in db["logs"].aggregate(pipeline)]
+
+
+async def dash_top_data_keys(
+    project_id: Optional[str],
+    timestamp_gte: Optional[str],
+    timestamp_lte: Optional[str],
+    limit: int,
+    visibility: Optional[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """
+    Conta a ocorrência de CHAVES dentro de data (usa objectToArray).
+    """
+    db = await get_db()
+    match = await _restrict_to_active_and_visibility(visibility, project_id)
+    match = _apply_time_window(match, timestamp_gte, timestamp_lte)
+
+    pipeline: List[Dict[str, Any]] = [
+        {"$match": match},
+        {"$addFields": {"_kv": {"$objectToArray": {"$ifNull": ["$data", {}]}}}},
+        {"$unwind": {"path": "$_kv", "preserveNullAndEmptyArrays": False}},
+        {"$group": {"_id": "$_kv.k", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1, "_id": 1}},
+        {"$limit": int(limit)},
+        {"$project": {"_id": 0, "key": "$_id", "count": 1}},
+    ]
+    return [doc async for doc in db["logs"].aggregate(pipeline)]
+
+
+async def dash_top_data_values(
+    project_id: Optional[str],
+    timestamp_gte: Optional[str],
+    timestamp_lte: Optional[str],
+    limit: int,
+    visibility: Optional[Dict[str, Any]],
+    item: Optional[str] = None,  # <— NOVO
+) -> List[Dict[str, Any]]:
+    """
+    Conta combinações (chave,value) em data. Quando 'item' é informado,
+    conta apenas os valores daquela chave, devolvendo [{item, value, count}].
+    """
+    db = await get_db()
+    match = await _restrict_to_active_and_visibility(visibility, project_id)
+    match = _apply_time_window(match, timestamp_gte, timestamp_lte)
+
+    pipeline = [
+        {"$match": match},
+        {"$addFields": {"_pairs": {"$objectToArray": {"$ifNull": ["$data", {}]}}}},
+        {"$unwind": "$_pairs"},
+    ]
+
+    if item:
+        pipeline += [
+            {"$match": {"_pairs.k": item}},
+            {"$group": {"_id": "$_pairs.v", "count": {"$sum": 1}}},
+            {"$sort": {"count": -1, "_id": 1}},
+            {"$limit": int(limit)},
+            {"$project": {"_id": 0, "item": {"$literal": item}, "value": "$_id", "count": 1}},
+        ]
+    else:
+        pipeline += [
+            {"$group": {"_id": {"k": "$_pairs.k", "v": "$_pairs.v"}, "count": {"$sum": 1}}},
+            {"$sort": {"count": -1, "_id.k": 1, "_id.v": 1}},
+            {"$limit": int(limit)},
+            {"$project": {"_id": 0, "item": "$_id.k", "value": "$_id.v", "count": 1}},
+        ]
+
     return [doc async for doc in db["logs"].aggregate(pipeline)]
