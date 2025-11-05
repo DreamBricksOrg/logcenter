@@ -235,12 +235,13 @@ async def create_log(
 
 
 async def list_logs(
+    filters: Optional[Dict[str, Any]] = None,
     project_id: Optional[str] = None,
     visibility: Optional[Dict[str, Any]] = None,
     limit: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
     """
-    Lista logs mais recentes.
+    Lista logs filtrados mais recentes.
     Aplica visibilidade (espera receber filtros por project_id) e filtro opcional por project_id.
     - `limit` opcional com teto (DEFAULT_LIMIT=1000, MAX_LIMIT=5000).
     - Sempre restringe a projetos ATIVOS via visibilidade.
@@ -248,7 +249,7 @@ async def list_logs(
     db = await get_db()
     base_visibility = await _visibility_only_active(visibility)
 
-    query = _merge_visibility_and_filters(base_visibility, project_id=project_id)
+    query = _merge_visibility_and_filters(base_visibility, project_id=project_id, filters=filters)
 
     n = _cap_limit(limit)
     cursor = db["logs"].find(query).sort("timestamp", -1).limit(n)

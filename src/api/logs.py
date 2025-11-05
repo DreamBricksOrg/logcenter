@@ -52,7 +52,12 @@ async def list_logs(
     limit: Optional[int] = Query(default=None, ge=1, description="Limite de registros (teto no service 5000)"),
     visibility: Dict[str, Any] = Depends(enforce_visibility),
 ):
-    return await svc_list_log(project_id=project_id, visibility=visibility, limit=limit)
+    raw_qs = dict(request.query_params)
+    raw_qs.pop("project_id", None)
+    raw_qs.pop("limit", None)
+    filters = build_filter(QueryParams(raw_qs)) if raw_qs else None
+
+    return await svc_list_log(filters=filters, project_id=project_id, visibility=visibility, limit=limit)
 
 
 @router.get("/latest", response_model=Dict[str, Optional[str]])
