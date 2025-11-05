@@ -25,9 +25,11 @@ def build_filter(params: Dict[str, Any]) -> Dict[str, Any]:
       - __gte, __lte,
       - __regex,
       - igualdade simples.
-    Obs.: a normalização de tipos específicos (ex.: ObjectId) é tratada nas funções que consomem esse filtro.
+    Acumula múltiplos operadores.
     """
     filt: Dict[str, Any] = {}
+    accum: Dict[str, Dict[str, Any]] = {}
+
     for key, value in params.items():
         if key.startswith("_") or value in (None, ""):
             continue
@@ -35,17 +37,24 @@ def build_filter(params: Dict[str, Any]) -> Dict[str, Any]:
             field, op = key.split("__", 1)
         else:
             field, op = key, None
-
         if op == "in":
-            filt[field] = {"$in": value.split(",")}
-        elif op == "gte":
-            filt[field] = {"$gte": value}
-        elif op == "lte":
-            filt[field] = {"$lte": value}
+            vals = value.split(",")
+            filt[field] = {"$in": vals}
+        elif op in ("gte", "lte"):
+            accum.setdefault(field, {})
+            accum[field][f"${op}"] = value
         elif op == "regex":
-            filt[field] = {"$regex": value}
+            accum.setdefault(field, {})
+            accum[field]["$regex"] = value
         else:
             filt[field] = value
+
+    for field, cond in accum.items():
+        if field in filt and isinstance(filt[field], dict):
+            filt[field].update(cond)
+        else:
+            filt[field] = cond
+
     return filt
 
 
@@ -190,11 +199,9 @@ def _convert_timestamp_filters(query: Dict[str, Any]) -> Dict[str, Any]:
     """
     Se o filtro contiver timestamp.__gte ou __lte como string ISO,
     converte para comparação real usando $expr + $toDate.
-    Evita comparação lexicográfica em strings.
+    Mantém condições da query.
     """
-    if not query:
-        return query
-    if not isinstance(query, dict):
+    if not query or not isinstance(query, dict):
         return query
     ts_filter = query.get("timestamp")
     if not isinstance(ts_filter, dict):
@@ -206,23 +213,27 @@ def _convert_timestamp_filters(query: Dict[str, Any]) -> Dict[str, Any]:
     expr_parts = []
     if gte:
         try:
-            datetime.fromisoformat(gte.replace("Z", "+00:00"))  # valida
+            datetime.fromisoformat(str(gte).replace("Z", "+00:00"))
             expr_parts.append({"$gte": [{"$toDate": "$timestamp"}, {"$toDate": gte}]})
         except Exception:
             pass
     if lte:
         try:
-            datetime.fromisoformat(lte.replace("Z", "+00:00"))
+            datetime.fromisoformat(str(lte).replace("Z", "+00:00"))
             expr_parts.append({"$lte": [{"$toDate": "$timestamp"}, {"$toDate": lte}]})
         except Exception:
             pass
     if not expr_parts:
         return query
+
+    query = dict(query)  # cópia defensiva
     query.pop("timestamp", None)
-    if "$and" in query:
+    if "$and" in query and isinstance(query["$and"], list):
         query["$and"].append({"$expr": {"$and": expr_parts}})
     else:
         query = {"$and": [query, {"$expr": {"$and": expr_parts}}]}
+
+    return query
 
 
 async def create_log(
