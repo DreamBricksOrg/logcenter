@@ -6,9 +6,8 @@ import json
 import openpyxl
 from openpyxl.utils import get_column_letter
 from typing import List, Optional, Dict, Any
-
+from datetime import datetime
 from bson import ObjectId
-from fastapi import HTTPException
 
 from db.utils import get_db
 from util.helpers import utcnow_iso, format_datetime
@@ -187,6 +186,45 @@ def _merge_visibility_and_filters(
     return parts[0] if len(parts) == 1 else {"$and": parts}
 
 
+def _convert_timestamp_filters(query: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Se o filtro contiver timestamp.__gte ou __lte como string ISO,
+    converte para comparação real usando $expr + $toDate.
+    Evita comparação lexicográfica em strings.
+    """
+    if not query:
+        return query
+    if not isinstance(query, dict):
+        return query
+    ts_filter = query.get("timestamp")
+    if not isinstance(ts_filter, dict):
+        return query
+    gte = ts_filter.get("$gte")
+    lte = ts_filter.get("$lte")
+    if not (gte or lte):
+        return query
+    expr_parts = []
+    if gte:
+        try:
+            datetime.fromisoformat(gte.replace("Z", "+00:00"))  # valida
+            expr_parts.append({"$gte": [{"$toDate": "$timestamp"}, {"$toDate": gte}]})
+        except Exception:
+            pass
+    if lte:
+        try:
+            datetime.fromisoformat(lte.replace("Z", "+00:00"))
+            expr_parts.append({"$lte": [{"$toDate": "$timestamp"}, {"$toDate": lte}]})
+        except Exception:
+            pass
+    if not expr_parts:
+        return query
+    query.pop("timestamp", None)
+    if "$and" in query:
+        query["$and"].append({"$expr": {"$and": expr_parts}})
+    else:
+        query = {"$and": [query, {"$expr": {"$and": expr_parts}}]}
+
+
 async def create_log(
     project_id: str,
     status: str,
@@ -250,6 +288,7 @@ async def list_logs(
     base_visibility = await _visibility_only_active(visibility)
 
     query = _merge_visibility_and_filters(base_visibility, project_id=project_id, filters=filters)
+    query = _convert_timestamp_filters(query)
 
     n = _cap_limit(limit)
     cursor = db["logs"].find(query).sort("timestamp", -1).limit(n)
@@ -337,6 +376,7 @@ async def generate_logs_csv(
     db = await get_db()
     base_visibility = await _visibility_only_active(visibility)
     query = _merge_visibility_and_filters(base_visibility, project_id=project_id, filters=filters)
+    query = _convert_timestamp_filters(query)
 
     projection = {
         "_id": 1, "uploadedAt": 1, "timestamp": 1, "status": 1, "level": 1,
@@ -394,6 +434,7 @@ async def generate_logs_excel(
     db = await get_db()
     base_visibility = await _visibility_only_active(visibility)
     query = _merge_visibility_and_filters(base_visibility, project_id=project_id, filters=filters)
+    query = _convert_timestamp_filters(query)
 
     cursor = db["logs"].find(query).sort("timestamp", -1)
     if isinstance(limit, int) and limit > 0:
