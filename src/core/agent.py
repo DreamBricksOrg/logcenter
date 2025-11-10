@@ -1,4 +1,3 @@
-# src/integrations/logcenter_agent.py
 from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
@@ -18,7 +17,7 @@ async def sdk_log(
     status: str | None = None,
 ) -> bool:
     """
-    Função única p/ o projeto. Não importa o SDK oficial: usamos nosso adapter.
+    Função única p/ o projeto. Não importa o SDK oficial ainda.
     """
     if not settings.LOGCENTER_SDK_ENABLED:
         return False

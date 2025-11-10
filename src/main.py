@@ -62,8 +62,8 @@ def create_app() -> FastAPI:
     app.include_router(stream_router)
     app.include_router(dash_router)
 
-    @app.get("/health")
-    async def health():
+    @app.get("/alive")
+    async def alive():
         return {"status": "ok", "env": settings.ENV}
 
     return app
