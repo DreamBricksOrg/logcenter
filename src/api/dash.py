@@ -10,6 +10,7 @@ from services.dashboard_service import (
     dash_top_tags,
     dash_top_data_keys,
     dash_top_data_values,
+    dash_top_messages,
 )
 from core.auth import enforce_visibility
 from models.dash import (
@@ -19,9 +20,31 @@ from models.dash import (
     DashTopTag,
     DashTopDataKey,
     DashTopDataValue,
+    DashTopMessage,
 )
 
 router = APIRouter(prefix="/dash", tags=["dash"])
+
+
+EXCLUDE_FILTER_PARAMS = [
+    "project_id",
+    "timestamp__gte",
+    "timestamp__lte",
+    "limit",
+    "level__in",
+    "item",
+]
+
+def _build_extra_filters(request: Request, exclude: List[str]) -> Dict[str, Any]:
+    """
+    Constrói o dicionário de extra_filters a partir de query_params,
+    removendo os campos de controle que já são tratados nos parâmetros
+    explícitos da rota (project_id, timestamp__gte, etc.).
+    """
+    params = dict(request.query_params)
+    for key in exclude:
+        params.pop(key, None)
+    return params
 
 
 @router.get(
@@ -38,6 +61,11 @@ async def dash_levels(
     limit: int = Query(20, ge=1, le=100),
     visibility: Dict[str, Any] = Depends(enforce_visibility),
 ):
+    extra_filters = _build_extra_filters(
+        request,
+        exclude=EXCLUDE_FILTER_PARAMS,
+    )
+
     return await dash_level_counts(
         project_id=project_id,
         timestamp_gte=timestamp__gte,
@@ -45,6 +73,7 @@ async def dash_levels(
         levels=level__in,
         limit=limit,
         visibility=visibility,
+        extra_filters=extra_filters,
     )
 
 
@@ -61,12 +90,18 @@ async def dash_top_users_view(
     limit: int = Query(20, ge=1, le=100),
     visibility: Dict[str, Any] = Depends(enforce_visibility),
 ):
+    extra_filters = _build_extra_filters(
+        request,
+        exclude=EXCLUDE_FILTER_PARAMS
+    )
+
     return await dash_top_users(
         project_id=project_id,
         timestamp_gte=timestamp__gte,
         timestamp_lte=timestamp__lte,
         limit=limit,
         visibility=visibility,
+        extra_filters=extra_filters,
     )
 
 
@@ -83,12 +118,18 @@ async def dash_top_endpoints_view(
     limit: int = Query(20, ge=1, le=100),
     visibility: Dict[str, Any] = Depends(enforce_visibility),
 ):
+    extra_filters = _build_extra_filters(
+        request,
+        exclude=EXCLUDE_FILTER_PARAMS
+    )
+
     return await dash_top_endpoints(
         project_id=project_id,
         timestamp_gte=timestamp__gte,
         timestamp_lte=timestamp__lte,
         limit=limit,
         visibility=visibility,
+        extra_filters=extra_filters,
     )
 
 
@@ -105,12 +146,18 @@ async def dash_top_tags_view(
     limit: int = Query(20, ge=1, le=100),
     visibility: Dict[str, Any] = Depends(enforce_visibility),
 ):
+    extra_filters = _build_extra_filters(
+        request,
+        exclude=EXCLUDE_FILTER_PARAMS
+    )
+
     return await dash_top_tags(
         project_id=project_id,
         timestamp_gte=timestamp__gte,
         timestamp_lte=timestamp__lte,
         limit=limit,
         visibility=visibility,
+        extra_filters=extra_filters,
     )
 
 
@@ -127,12 +174,18 @@ async def dash_top_data_keys_view(
     limit: int = Query(20, ge=1, le=100),
     visibility: Dict[str, Any] = Depends(enforce_visibility),
 ):
+    extra_filters = _build_extra_filters(
+        request,
+        exclude=EXCLUDE_FILTER_PARAMS
+    )
+
     return await dash_top_data_keys(
         project_id=project_id,
         timestamp_gte=timestamp__gte,
         timestamp_lte=timestamp__lte,
         limit=limit,
         visibility=visibility,
+        extra_filters=extra_filters,
     )
 
 
@@ -150,6 +203,11 @@ async def dash_top_data_values_view(
     limit: int = Query(20, ge=1, le=100),
     visibility: Dict[str, Any] = Depends(enforce_visibility),
 ):
+    extra_filters = _build_extra_filters(
+        request,
+        exclude=EXCLUDE_FILTER_PARAMS
+    )
+
     return await dash_top_data_values(
         project_id=project_id,
         timestamp_gte=timestamp__gte,
@@ -157,4 +215,37 @@ async def dash_top_data_values_view(
         limit=limit,
         visibility=visibility,
         item=item,
+        extra_filters=extra_filters,
+    )
+
+
+@router.get(
+    "/top-messages",
+    response_model=List[DashTopMessage],
+    summary="Top mensagens de log por contagem (projetos ativos + visibilidade)",
+)
+async def dash_top_messages_view(
+    request: Request,
+    project_id: Optional[str] = Query(None),
+    timestamp__gte: Optional[str] = Query(None),
+    timestamp__lte: Optional[str] = Query(None),
+    limit: int = Query(20, ge=1, le=100),
+    visibility: Dict[str, Any] = Depends(enforce_visibility),
+):
+    """
+    Agrega as mensagens de log (campo message), permitindo filtros adicionais via query:
+    ex: message__regex=timeout.
+    """
+    extra_filters = _build_extra_filters(
+        request,
+        exclude=EXCLUDE_FILTER_PARAMS
+    )
+
+    return await dash_top_messages(
+        project_id=project_id,
+        timestamp_gte=timestamp__gte,
+        timestamp_lte=timestamp__lte,
+        limit=limit,
+        visibility=visibility,
+        extra_filters=extra_filters,
     )

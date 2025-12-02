@@ -1,9 +1,100 @@
 from __future__ import annotations
 
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Mapping
 from bson import ObjectId
 
 from db.utils import get_db
+
+
+RESERVED_KEYS = {
+    "project_id",
+    "timestamp",
+    "timestamp_gte",
+    "timestamp_lte",
+    "limit",
+    "levels",
+    "item",
+}
+
+
+def build_filter(params: Mapping[str, Any]) -> Dict[str, Any]:
+    """
+    Constrói um filtro MongoDB a partir de parâmetros de query genéricos.
+
+    Suporta operadores:
+      - field__in    -> {"field": {"$in": [...]}}
+      - field__gte   -> {"field": {"$gte": value}}
+      - field__lte   -> {"field": {"$lte": value}}
+      - field__regex -> {"field": {"$regex": value}}
+      - field        -> igualdade simples {"field": value}
+
+    Regras:
+      - Ignora chaves começando com "_" (ex: _internal).
+      - Ignora chaves em RESERVED_KEYS (project_id, timestamp*, etc),
+        porque esses já são tratados pelo dashboard_service.
+      - Ignora valores vazios (None, "").
+      - Acumula múltiplos operadores para o mesmo campo.
+    """
+    filt: Dict[str, Any] = {}
+    accum: Dict[str, Dict[str, Any]] = {}
+
+    for key, value in params.items():
+        if key.startswith("_"):
+            continue
+        if key in RESERVED_KEYS:
+            continue
+        if value in (None, ""):
+            continue
+
+        if "__" in key:
+            field, op = key.split("__", 1)
+        else:
+            field, op = key, None
+
+        if op == "in":
+            vals = [v for v in str(value).split(",") if v != ""]
+            filt[field] = {"$in": vals}
+        elif op in ("gte", "lte"):
+            accum.setdefault(field, {})
+            accum[field][f"${op}"] = value
+        elif op == "regex":
+            accum.setdefault(field, {})
+            accum[field]["$regex"] = value
+        else:
+            filt[field] = value
+
+    # Junta os acumulados no filtro final
+    for field, cond in accum.items():
+        if field in filt and isinstance(filt[field], dict):
+            filt[field].update(cond)
+        else:
+            filt[field] = cond
+
+    return filt
+
+
+def _apply_extra_filters(
+    match: Dict[str, Any],
+    extra_filters: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """
+    Aplica filtros adicionais no match, usando build_filter.
+    Não mexe em campos reservados (controlados por outras regras).
+    """
+    if not extra_filters:
+        return match
+
+    built = build_filter(extra_filters)
+    if not built:
+        return match
+
+    for k, v in built.items():
+        if k in match and isinstance(match[k], dict) and isinstance(v, dict):
+            match[k].update(v)
+        else:
+            match[k] = v
+
+    return match
 
 
 async def _active_project_ids(db) -> List[str]:
@@ -54,14 +145,36 @@ async def _restrict_to_active_and_visibility(
     return match
 
 
-def _apply_time_window(match: Dict[str, Any], gte: Optional[str], lte: Optional[str]) -> Dict[str, Any]:
-    if gte or lte:
+def _apply_time_window(
+    match: Dict[str, Any],
+    gte: Optional[str],
+    lte: Optional[str],
+) -> Dict[str, Any]:
+    """
+    Aplica janela temporal em 'timestamp'.
+
+    Regras:
+      - Se já existir timestamp como igualdade simples (ex.: "timestamp": "X"),
+        NÃO mexe (prioridade pra igualdade).
+      - Se já existir um dict em "timestamp", faz merge com $gte / $lte.
+      - Se não existir, cria um dict com os operadores informados.
+    """
+    if not gte and not lte:
+        return match
+    if "timestamp" in match and not isinstance(match["timestamp"], dict):
+        return match
+    if "timestamp" in match and isinstance(match["timestamp"], dict):
+        cond = dict(match["timestamp"])
+    else:
         cond: Dict[str, Any] = {}
-        if gte:
-            cond["$gte"] = gte
-        if lte:
-            cond["$lte"] = lte
+
+    if gte:
+        cond["$gte"] = gte
+    if lte:
+        cond["$lte"] = lte
+    if cond:
         match["timestamp"] = cond
+
     return match
 
 
@@ -72,11 +185,13 @@ async def dash_level_counts(
     levels: Optional[List[str]],
     limit: int,
     visibility: Optional[Dict[str, Any]],
+    extra_filters: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, Any]]:
     """
     Conta logs agrupados por level (UPPER), respeitando:
       - projetos ATIVOS, visibilidade, janela temporal.
       - filtro opcional de levels (case-insensitive).
+      - filtros adicionais genéricos (build_filter).
     """
     db = await get_db()
     match = await _restrict_to_active_and_visibility(visibility, project_id)
@@ -84,6 +199,8 @@ async def dash_level_counts(
 
     if levels:
         match["level"] = {"$in": [lvl.upper() for lvl in levels]}
+
+    match = _apply_extra_filters(match, extra_filters)
 
     pipeline = [
         {"$match": match},
@@ -102,6 +219,7 @@ async def dash_top_users(
     timestamp_lte: Optional[str],
     limit: int,
     visibility: Optional[Dict[str, Any]],
+    extra_filters: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, Any]]:
     """
     Conta usuários. Considera: user_email, user, user.id, actor, actor.email.
@@ -109,6 +227,7 @@ async def dash_top_users(
     db = await get_db()
     match = await _restrict_to_active_and_visibility(visibility, project_id)
     match = _apply_time_window(match, timestamp_gte, timestamp_lte)
+    match = _apply_extra_filters(match, extra_filters)
 
     user_expr = {
         "$ifNull": [
@@ -134,6 +253,7 @@ async def dash_top_endpoints(
     timestamp_lte: Optional[str],
     limit: int,
     visibility: Optional[Dict[str, Any]],
+    extra_filters: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, Any]]:
     """
     Conta endpoints/URLs. Tenta em ordem:
@@ -145,6 +265,7 @@ async def dash_top_endpoints(
     db = await get_db()
     match = await _restrict_to_active_and_visibility(visibility, project_id)
     match = _apply_time_window(match, timestamp_gte, timestamp_lte)
+    match = _apply_extra_filters(match, extra_filters)
 
     candidate = {
         "$ifNull": [
@@ -205,18 +326,13 @@ async def dash_top_endpoints(
         }
     }
 
-    endpoint_expr = {
-        "$ifNull": [
-            candidate,
-            {"$ifNull": [fallback_from_data, "unknown"]}
-        ]
-    }
+    endpoint_expr = {"$ifNull": [candidate, {"$ifNull": [fallback_from_data, "unknown"]}]}
 
     normalized = {
         "$toLower": {
             "$let": {
                 "vars": {"raw": endpoint_expr},
-                "in": {"$first": {"$split": ["$$raw", "?"]}}
+                "in": {"$first": {"$split": ["$$raw", "?"]}},
             }
         }
     }
@@ -239,6 +355,7 @@ async def dash_top_tags(
     timestamp_lte: Optional[str],
     limit: int,
     visibility: Optional[Dict[str, Any]],
+    extra_filters: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, Any]]:
     """
     Conta tags. Garante array com ifNull e filtra tipos indevidos.
@@ -246,6 +363,7 @@ async def dash_top_tags(
     db = await get_db()
     match = await _restrict_to_active_and_visibility(visibility, project_id)
     match = _apply_time_window(match, timestamp_gte, timestamp_lte)
+    match = _apply_extra_filters(match, extra_filters)
 
     pipeline = [
         {"$match": match},
@@ -260,12 +378,43 @@ async def dash_top_tags(
     return [doc async for doc in db["logs"].aggregate(pipeline)]
 
 
+async def dash_top_messages(
+    project_id: Optional[str],
+    timestamp_gte: Optional[str],
+    timestamp_lte: Optional[str],
+    limit: int,
+    visibility: Optional[Dict[str, Any]],
+    extra_filters: Optional[Dict[str, Any]] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Conta mensagens (campo 'message').
+    - Respeita projetos ATIVOS, visibilidade e janela temporal.
+    - Considera apenas docs em que message é string.
+    - Filtros adicionais extra_filters, regex message__regex="timeout".
+    """
+    db = await get_db()
+    match = await _restrict_to_active_and_visibility(visibility, project_id)
+    match = _apply_time_window(match, timestamp_gte, timestamp_lte)
+    match = _apply_extra_filters(match, extra_filters)
+
+    pipeline: List[Dict[str, Any]] = [
+        {"$match": match},
+        {"$match": {"message": {"$type": "string"}}},
+        {"$group": {"_id": "$message", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1, "_id": 1}},
+        {"$limit": int(limit)},
+        {"$project": {"_id": 0, "message": "$_id", "count": 1}},
+    ]
+    return [doc async for doc in db["logs"].aggregate(pipeline)]
+
+
 async def dash_top_data_keys(
     project_id: Optional[str],
     timestamp_gte: Optional[str],
     timestamp_lte: Optional[str],
     limit: int,
     visibility: Optional[Dict[str, Any]],
+    extra_filters: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, Any]]:
     """
     Conta a ocorrência de CHAVES dentro de data (usa objectToArray).
@@ -273,6 +422,7 @@ async def dash_top_data_keys(
     db = await get_db()
     match = await _restrict_to_active_and_visibility(visibility, project_id)
     match = _apply_time_window(match, timestamp_gte, timestamp_lte)
+    match = _apply_extra_filters(match, extra_filters)
 
     pipeline: List[Dict[str, Any]] = [
         {"$match": match},
@@ -292,7 +442,8 @@ async def dash_top_data_values(
     timestamp_lte: Optional[str],
     limit: int,
     visibility: Optional[Dict[str, Any]],
-    item: Optional[str] = None,  # <— NOVO
+    item: Optional[str] = None,
+    extra_filters: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, Any]]:
     """
     Conta combinações (chave,value) em data. Quando 'item' é informado,
@@ -301,8 +452,9 @@ async def dash_top_data_values(
     db = await get_db()
     match = await _restrict_to_active_and_visibility(visibility, project_id)
     match = _apply_time_window(match, timestamp_gte, timestamp_lte)
+    match = _apply_extra_filters(match, extra_filters)
 
-    pipeline = [
+    pipeline: List[Dict[str, Any]] = [
         {"$match": match},
         {"$addFields": {"_pairs": {"$objectToArray": {"$ifNull": ["$data", {}]}}}},
         {"$unwind": "$_pairs"},
