@@ -27,7 +27,7 @@ async def lifespan(app: FastAPI):
         await sdk_log(
             "INFO",
             "LogCenter startup",
-            data={"env": settings.ENV, "version": "0.1.5.6-dev"},
+            data={"env": settings.ENV, "version": "0.1.5.6"},
             status="OK",
         )
 
@@ -37,12 +37,12 @@ async def lifespan(app: FastAPI):
     await sdk_log(
         "INFO",
         "LogCenter shutdown",
-        data={"env": settings.ENV, "version": "0.1.5.6-dev"},
+        data={"env": settings.ENV, "version": "0.1.5.6"},
         status="INFO",
     )
 
 def create_app() -> FastAPI:
-    app = FastAPI(title=settings.APP_NAME, version="0.1.5.6-dev", lifespan=lifespan)
+    app = FastAPI(title=settings.APP_NAME, version="0.1.5.6", lifespan=lifespan)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],

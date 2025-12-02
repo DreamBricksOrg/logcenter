@@ -12,4 +12,4 @@ ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app/src
 
 EXPOSE 8000
-CMD ["python", "-m", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--lifespan=on", "--log-level", "debug"]
+CMD ["python", "-m", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--lifespan=on", "--log-level", "info"]

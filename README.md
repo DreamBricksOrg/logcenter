@@ -98,12 +98,14 @@ src/
 ## 4. Configuração e Deploy (Local)
 
 ### 4.1 Clonar
+
 ```bash
 git clone https://github.com/DreamBricksOrg/logcenter.git
 cd logcenter
 ```
 
 ### 4.2 `.env` mínimo
+
 ```env
 ENV=dev
 APP_PORT=8000
@@ -122,6 +124,7 @@ SECRET_KEY=<um-segredo-aleatório-hex>
 ```
 
 ### 4.3 Subir com Docker
+
 ```bash
 docker compose build
 docker compose up -d
@@ -155,6 +158,7 @@ Autenticação unificada via `/auth/login` com e-mail + senha.
 No login, é gerada/rotacionada uma `api_key` de usuário, persistida no documento `users`.
 
 Modelo de user (coleção `users`):
+
 ```json
 {
   "_id": "ObjectId",
@@ -174,6 +178,7 @@ Modelo de user (coleção `users`):
 - O `core/auth.enforce_visibility` transforma o principal em filtro de visibilidade sobre `project_id`.
 
 Header:
+
 ```
 X-API-Key: <api_key_do_usuario>
 ```
@@ -183,6 +188,7 @@ X-API-Key: <api_key_do_usuario>
 ## 7. Modelos Principais
 
 ### 7.1 Project
+
 ```json
 {
   "_id": "ObjectId",
@@ -194,6 +200,7 @@ X-API-Key: <api_key_do_usuario>
 ```
 
 ### 7.2 Log
+
 ```json
 {
   "_id": "ObjectId",
@@ -216,11 +223,15 @@ X-API-Key: <api_key_do_usuario>
 ### 8.1 Auth
 
 #### `POST /auth/login`
+
 Login unificado para admins e clientes.
+
 ```bash
 curl -X POST http://localhost:8000/auth/login   -H "Content-Type: application/json"   -d '{"email":"admin@example.com","password":"31773177"}'
 ```
+
 Resposta:
+
 ```json
 {
   "api_key": "...",
@@ -235,18 +246,23 @@ Resposta:
 ### 8.2 Projetos
 
 #### `POST /projects/` (admin)
+
 ```bash
 curl -X POST http://localhost:8000/projects/   -H "X-API-Key: <ADMIN_KEY>"   -H "Content-Type: application/json"   -d '{"name":"Acme App","code":"acme","status":"active"}'
 ```
 
 #### `GET /projects/`
+
 Lista projetos. Apenas ativos para clients. Admin pode ver todos.
+
 ```bash
 curl -L "http://localhost:8000/projects/"   -H "X-API-Key: <API_KEY>"
 ```
 
 #### `PATCH /projects/{id}`
+
 Atualiza campos, ex.: status.
+
 ```bash
 curl -X PATCH http://localhost:8000/projects/<ID>   -H "X-API-Key: <ADMIN_KEY>"   -H "Content-Type: application/json"   -d '{"status":"inactive"}'
 ```
@@ -254,7 +270,9 @@ curl -X PATCH http://localhost:8000/projects/<ID>   -H "X-API-Key: <ADMIN_KEY>" 
 ### 8.3 Logs
 
 #### `POST /logs/`
+
 Cria log.
+
 ```bash
 curl -X POST http://localhost:8000/logs/   -H "X-API-Key: <CLIENT_KEY>"   -H "Content-Type: application/json"   -d '{
         "project_id":"<PROJECT_ID>",
@@ -267,16 +285,21 @@ curl -X POST http://localhost:8000/logs/   -H "X-API-Key: <CLIENT_KEY>"   -H "Co
 ```
 
 #### `GET /logs/`
+
 Lista logs, respeitando visibilidade e projetos ativos.
+
 ```bash
 curl -L "http://localhost:8000/logs/?project_id=<PROJECT_ID>"   -H "X-API-Key: <API_KEY>"
 ```
 
 #### `GET /logs/levels`
+
 Contagem por nível (versão nos dashboards é preferível).
 
 #### `GET /logs/export?format=xlsx|csv`
+
 Exporta logs em planilha.
+
 ```bash
 curl -L "http://localhost:8000/logs/export?format=xlsx"   -H "X-API-Key: <API_KEY>" -o logs.xlsx
 ```
@@ -287,30 +310,38 @@ O módulo `/dash/` provê endpoints agregadores sobre os logs, utilizados pelos 
 
 Todos exigem autenticação via **API Key** (do admin ou de um cliente com acesso ao projeto) e respeitam automaticamente:
 
-* **visibilidade** (restrição de projetos do usuário);
-* **status ativo** dos projetos;
-* **janela temporal opcional** (`timestamp_gte`, `timestamp_lte`).
+- **visibilidade** (restrição de projetos do usuário);
+- **status ativo** dos projetos;
+- **janela temporal opcional** (`timestamp_gte`, `timestamp_lte`).
 
 #### `GET /dash/levels/`
+
 Contagem de logs por nível (filtrados por projetos ativos e visibilidade).
+
 ```bash
 curl -L "http://localhost:8000/dash/levels/?project_id=<PROJECT_ID>"   -H "X-API-Key: <API_KEY>"
 ```
 
 #### `GET /dash/top-users/`
+
 Top usuários por `data.userId`.
+
 ```bash
 curl -L "http://localhost:8000/dash/top-users/?timestamp__gte=2025-10-01T00:00:00Z"   -H "X-API-Key: <API_KEY>"
 ```
 
 #### `GET /dash/top-endpoints/`
+
 Top endpoints por `data.endpoint`.
+
 ```bash
 curl -L "http://localhost:8000/dash/top-endpoints/?timestamp__gte=2025-10-01T00:00:00Z"   -H "X-API-Key: <API_KEY>"
 ```
 
 #### `GET /dash/top-data/keys`
+
 Retorna a contagem das **chaves** existentes dentro de `data`.
+
 ```bash
 # 1) Top chaves de todo o período
 curl -s "$BASE/dash/top-data/keys?limit=20" \
@@ -322,7 +353,9 @@ curl -s "$BASE/dash/top-data/keys?project_id=$P1_ID&timestamp__gte=2025-11-02T00
 ```
 
 #### `GET /dash/top-data/values`
+
 Conta **pares (item, valor)** encontrados em `data`.
+
 ```bash
 # 1) Top pares (item+valor) de todo o período
 curl -s "$BASE/dash/top-data/values?limit=20" \
@@ -338,7 +371,9 @@ curl -s "$BASE/dash/top-data/values?project_id=$P1_ID&timestamp__gte=2025-11-02T
 ```
 
 #### `GET /dash/top-tags`
+
 Conta as ocorrências dos valores de `tags` dentro dos logs (campo `tags[]` em cada documento).
+
 ```bash
 # Top 10 tags globais
 curl -s "$BASE/dash/top-tags?limit=10" \
@@ -353,9 +388,10 @@ curl -s "$BASE/dash/top-tags?project_id=$P1_ID&timestamp_gte=2025-11-01T00:00:00
 
 ## 9. SDK de Integração
 
-Repositório: https://github.com/DreamBricksOrg/logcenter_sdk
+Repositório: <https://github.com/DreamBricksOrg/logcenter_sdk>
 
 Exemplo mínimo (adaptado ao projeto):
+
 ```python
 from log_center_sdk.log_sender import LogCenter
 
@@ -396,11 +432,13 @@ Colunas: `_id, uploadedAt, timestamp, status, level, message, tags, data, reques
 Mesmo usando docker-compose local, o projeto está pronto para CI/CD simples:
 
 1. Build
+
    ```bash
    docker build -t logcenter-api .
    ```
 
 2. Push (registro remoto, opcional)
+
    ```bash
    docker tag logcenter-api registry.example.com/logcenter:latest
    docker push registry.example.com/logcenter:latest
@@ -488,6 +526,7 @@ Causa: `LOGCENTER_SDK_ENABLED=false`, BASE_URL incorreta ou loopback.
 Solução: confirmar `LOGCENTER_BASE_URL` e `LOGCENTER_API_KEY`, ativar o SDK.
 
 7) Debug local rápido  
+
 ```bash
 docker compose logs -f api
 docker compose exec api bash
@@ -497,4 +536,4 @@ python -m uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
 ---
 
 Mantenedor: Dream Bricks  
-Repositório: https://github.com/DreamBricksOrg/logcenter
+Repositório: <https://github.com/DreamBricksOrg/logcenter>
