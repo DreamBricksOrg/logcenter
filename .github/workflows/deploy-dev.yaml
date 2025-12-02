@@ -25,7 +25,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
         with:
-          fetch-depth: 0
+          fetch-depth: 0 
 
       - name: Definir variáveis de versão/arquivo
         id: vars
@@ -58,12 +58,9 @@ jobs:
           HOST: ${{ secrets.HOST_DEV }}
           USER: ${{ secrets.USER_DEV }}
         run: |
-          ssh -p "${{ env.SSH_PORT }}" -i ~/.ssh/id_rsa -o StrictHostKeyChecking=yes \
-            "$USER@$HOST" "mkdir -p ~/logcenter_uploads"
-
           scp -P "${{ env.SSH_PORT }}" -i ~/.ssh/id_rsa -o StrictHostKeyChecking=yes \
             "${{ steps.vars.outputs.archive }}" \
-            "$USER@$HOST:~/logcenter_uploads/${{ steps.vars.outputs.archive }}"
+            "$USER@$HOST:/tmp/${{ steps.vars.outputs.archive }}"
 
       - name: Deploy remoto (ssh)
         env:
@@ -77,13 +74,12 @@ jobs:
             "$USER@$HOST" "
               set -e
               echo '[DEV DEPLOY] Iniciando...'
-              mkdir -p \"\$APP_DIR\"
+              mkdir -p \"$APP_DIR\"
               # preserva .env local do servidor
-              find \"\$APP_DIR\" -mindepth 1 -maxdepth 1 ! -name '.env' -exec rm -rf {} +
-              # descompacta a partir do diretório de uploads no HOME
-              tar -xzf \"\$HOME/logcenter_uploads/\$ARCHIVE\" -C \"\$APP_DIR\"
-              cd \"\$APP_DIR\"
-              export ENV=\"\$ENV_NAME\"
+              find \"$APP_DIR\" -mindepth 1 -maxdepth 1 ! -name '.env' -exec rm -rf {} +
+              tar -xzf \"/tmp/$ARCHIVE\" -C \"$APP_DIR\"
+              cd \"$APP_DIR\"
+              export ENV=\"$ENV_NAME\"
               docker compose down || true
               docker compose up -d --build
               echo '[DEV DEPLOY] OK'
