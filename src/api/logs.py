@@ -36,6 +36,7 @@ async def create_log(payload: LogCreate, ok: bool = Depends(require_api_key)):
             status=payload.status,
             level=payload.level,
             message=payload.message,
+            timestamp=payload.timestamp,
             tags=payload.tags,
             data=payload.data,
             request_id=payload.request_id,
