@@ -25,26 +25,29 @@ from models.dash import (
 
 router = APIRouter(prefix="/dash", tags=["dash"])
 
-
-EXCLUDE_FILTER_PARAMS = [
+EXCLUDE_FILTER_PARAMS = {
     "project_id",
     "timestamp__gte",
     "timestamp__lte",
     "limit",
     "level__in",
     "item",
-]
+}
 
-def _build_extra_filters(request: Request, exclude: List[str]) -> Dict[str, Any]:
+
+def _build_extra_filters(request: Request, exclude: set[str]) -> Dict[str, Any] | None:
     """
     Constrói o dicionário de extra_filters a partir de query_params,
     removendo os campos de controle que já são tratados nos parâmetros
     explícitos da rota (project_id, timestamp__gte, etc.).
+    Tudo que sobrar vira candidato a filtro, respeitando a semântica
+    de operadores (field__gte, field__regex, data.campaign, etc.),
+    que será interpretada por utils.queries.build_filter no service.
     """
     params = dict(request.query_params)
     for key in exclude:
         params.pop(key, None)
-    return params
+    return params or None
 
 
 @router.get(
@@ -199,7 +202,10 @@ async def dash_top_data_values_view(
     project_id: Optional[str] = Query(None),
     timestamp__gte: Optional[str] = Query(None),
     timestamp__lte: Optional[str] = Query(None),
-    item: Optional[str] = Query(None, description="Se informado, filtra a chave e retorna contagem por valor"),
+    item: Optional[str] = Query(
+        None,
+        description="Se informado, filtra a chave e retorna contagem por valor",
+    ),
     limit: int = Query(20, ge=1, le=100),
     visibility: Dict[str, Any] = Depends(enforce_visibility),
 ):
