@@ -16,8 +16,8 @@ from services.log_service import (
     level_counts as svc_level_counts,
     generate_logs_csv,
     generate_logs_excel,
-    build_filter,
 )
+from util.queries import build_filter
 
 router = APIRouter(prefix="/logs", tags=["logs"])
 
@@ -49,16 +49,29 @@ async def create_log(payload: LogCreate, ok: bool = Depends(require_api_key)):
 @router.get("/", response_model=List[LogModel])
 async def list_logs(
     request: Request,
-    project_id: Optional[str] = Query(default=None, description="Filtra por um único projeto"),
-    limit: Optional[int] = Query(default=None, ge=1, description="Limite de registros (teto no service 5000)"),
+    project_id: Optional[str] = Query(
+        default=None,
+        description="Filtra por um único projeto",
+    ),
+    limit: Optional[int] = Query(
+        default=None,
+        ge=1,
+        description="Limite de registros (teto no service 10000)",
+    ),
     visibility: Dict[str, Any] = Depends(enforce_visibility),
 ):
     raw_qs = dict(request.query_params)
     raw_qs.pop("project_id", None)
     raw_qs.pop("limit", None)
+
     filters = build_filter(QueryParams(raw_qs)) if raw_qs else None
 
-    return await svc_list_log(filters=filters, project_id=project_id, visibility=visibility, limit=limit)
+    return await svc_list_log(
+        filters=filters,
+        project_id=project_id,
+        visibility=visibility,
+        limit=limit,
+    )
 
 
 @router.get("/latest", response_model=Dict[str, Optional[str]])
@@ -76,14 +89,22 @@ async def level_counts(project_id: Optional[str] = Query(default=None)):
 async def export_logs(
     request: Request,
     format: str = Query(default="xlsx", pattern="^(csv|xlsx)$"),
-    project_id: Optional[str] = Query(default=None, description="Filtra explicitamente por um projeto"),
-    limit: Optional[int] = Query(default=None, ge=1, description="Limite opcional do export (sem teto)"),
+    project_id: Optional[str] = Query(
+        default=None,
+        description="Filtra explicitamente por um projeto",
+    ),
+    limit: Optional[int] = Query(
+        default=None,
+        ge=1,
+        description="Limite opcional do export (sem teto no service; se None exporta tudo)",
+    ),
     visibility: Dict[str, Any] = Depends(enforce_visibility),
 ):
     raw_qs = dict(request.query_params)
     raw_qs.pop("format", None)
     raw_qs.pop("project_id", None)
     raw_qs.pop("limit", None)
+
     filters = build_filter(QueryParams(raw_qs)) if raw_qs else None
 
     if format == "xlsx":
