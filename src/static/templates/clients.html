@@ -1,28 +1,46 @@
-<!-- clients.html -->
-<!DOCTYPE html>
+<!doctype html>
 <html lang="pt-BR">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>LogCenter - Clientes</title>
-  <link rel="stylesheet" href="/src/static/css/global.css">
-</head>
-<body>
-  <!-- Cabeçalho de navegação -->
-  <header>
-    <nav>
-      <a href="/src/static/templates/admin.html">Projetos</a> |
-      <a href="/src/static/templates/clients.html">Clientes</a> |
-      <a href="#" id="logout-link">Logout</a>
-    </nav>
-  </header>
-  
-  <div class="container">
-    <h2>Gerenciamento de Clientes</h2>
-    <p>TODO</p>
-  </div>
-  
-  <!-- Script JavaScript da página de clientes -->
-  <script src="/src/static/js/clients.js"></script>
-</body>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LogCenter - Clients</title>
+    <link rel="stylesheet" href="/src/static/css/admin.css" />
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  </head>
+  <body>
+    <h1>Admin de Usuários - LogCenter</h1>
+
+    <div class="controls">
+      <button id="projects-btn">Projetos</button>
+      <button id="reload-btn">Carregar</button>
+      <button id="new-user-btn">Novo Usuário</button>
+      <button id="clients-btn">Clientes</button>
+      <button id="logout-btn">Logout</button>
+    </div>
+
+    <div
+      class="filter-form"
+      style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap"
+    >
+      <label style="display: flex; gap: 8px; align-items: center">
+        Grupo:
+        <select id="group-select">
+          <option value="__all__">Todos</option>
+        </select>
+      </label>
+
+      <span id="group-summary" style="font-size: 0.95rem; opacity: 0.8"></span>
+    </div>
+
+    <div id="loading-spinner" class="spinner" style="display: none"></div>
+    <div id="project-container" class="project-grid"></div>
+
+    <div class="pagination" id="pagination" hidden>
+      <button id="prev-page-btn" disabled>Anterior</button>
+      <span id="page-info">Página 1</span>
+      <button id="next-page-btn" disabled>Próxima</button>
+    </div>
+
+    <script src="/src/static/js/clients.js"></script>
+  </body>
 </html>

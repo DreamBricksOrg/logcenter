@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Novo Usuário</title>
+    <style>
+      @import url('/src/static/css/global.css');
+      @import url('/src/static/css/login.css');
+      @import url('/src/static/css/form.css');
+      @import url('/src/static/css/clients.css');
+    </style>
+  </head>
+
+  <body>
+    <div class="container">
+      <div class="content">
+        <div class="tittle">
+          <h1>Novo Usuário</h1>
+          <h2>Preencha os dados abaixo</h2>
+        </div>
+
+        <form id="user-form">
+          <label>
+            Email
+            <input
+              type="email"
+              name="email"
+              placeholder="email@dominio.com"
+              required
+            />
+          </label>
+
+          <label>
+            Nome
+            <input
+              type="text"
+              name="name"
+              placeholder="Nome do usuário"
+              required
+            />
+          </label>
+
+          <label>
+            Role
+            <select name="role">
+              <option value="client" selected>client</option>
+              <option value="admin">admin</option>
+            </select>
+          </label>
+
+          <label>
+            Senha (min 8)
+            <input
+              type="password"
+              name="password_plain"
+              minlength="8"
+              required
+            />
+          </label>
+
+          <label>
+            Adicionar em projetos (project_codes)
+            <div class="picker-box">
+              <div class="picker-top" style="justify-content: space-between">
+                <button type="button" id="toggle-picker" class="btn-mini">
+                  Selecionar projetos…
+                </button>
+                <span id="project-count" class="hint"></span>
+              </div>
+
+              <div id="selected-chips" class="chips"></div>
+
+              <div id="picker-panel" style="display: none; margin-top: 10px">
+                <div class="picker-top">
+                  <input
+                    id="project-search"
+                    class="picker-search"
+                    type="text"
+                    placeholder="Buscar por code ou nome..."
+                    autocomplete="off"
+                  />
+                  <button type="button" id="clear-selected" class="btn-mini">
+                    Limpar
+                  </button>
+                </div>
+
+                <div id="project-list" class="project-list"></div>
+
+                <div
+                  class="picker-actions"
+                  style="justify-content: space-between"
+                >
+                  <button type="button" id="select-visible" class="btn-mini">
+                    Selecionar visíveis
+                  </button>
+                  <button type="button" id="load-more" class="btn-mini">
+                    Carregar mais
+                  </button>
+                </div>
+
+                <div class="hint">
+                  Mostrando resultados em páginas (evita listar milhares). Use a
+                  busca.
+                </div>
+              </div>
+            </div>
+          </label>
+
+          <label>
+            E/ou adicionar novos grupos (project_codes) separados por vírgula
+            <input
+              type="text"
+              name="project_codes_extra"
+              placeholder="ex: projeto-x, projeto-y"
+            />
+            <div class="hint">
+              Use isso para códigos que ainda não existem na lista de projetos.
+            </div>
+          </label>
+
+          <button type="submit">Criar Usuário</button>
+          <button type="button" id="clients-back" class="btn-secondary">
+            Voltar
+          </button>
+        </form>
+
+        <div class="spinner-container" id="spinner-container">
+          <div class="spinner"></div>
+        </div>
+
+        <div id="result"></div>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="/src/static/js/clients_form.js"></script>
+  </body>
+</html>

@@ -10,54 +10,23 @@
 <body>
   <h1>Admin de Projetos - LogCenter</h1>
   <!-- Cabeçalho com navegação -->
-  <header>
-    <nav>
-      <a href="/src/static/templates/admin.html">Projetos</a> |
-      <a href="/src/static/templates/clients.html">Clientes</a> |
-      <a href="#" id="logout-link">Logout</a>
-    </nav>
-  </header>
+  <div class="controls">
+    <button id="projects-btn">Projetos</button>
+    <button id="new-project-btn">Novo Projeto</button>
+    <button id="reload-btn">Carregar</button>
+    <button id="export-btn" hidden>Exportar CSV</button>
+    <button id="clients-btn">Clientes</button>
+    <button id="logout-btn">Logout</button>
+  </div>
   
   <!-- TODO - implement filters later -->
-  <!-- <div class="filter-form" hidden>
-    <label>Slug: <input type="text" id="filter-slug"></label>
-    <label>Título: <input type="text" id="filter-tittle"></label>
-    <label>Notas: <input type="text" id="filter-notes"></label>
-    <label>URL Original: <input type="text" id="filter-original"></label>
-    <label>Callback URL: <input type="text" id="filter-callback"></label>
-    <label>De: <input type="date" id="filter-date-from"></label>
-    <label>Até: <input type="date" id="filter-date-to"></label>
-    <button id="apply-filters-btn">Aplicar Filtros</button>
-  </div> -->
+  <div class="filter-form" hidden>
+    <button id="apply-filters-btn" hidden>Aplicar Filtros</button>
+  </div>
 
   <div id="loading-spinner" class="spinner" style="display: none;"></div>
 
-  <div class="container">
-    <h2>Lista de Projetos</h2>
-    <!-- Mensagens de erro/sucesso -->
-    <p id="error-msg" class="error"></p>
-    
-    <!-- Formulário para criação de novo projeto -->
-    <form id="new-project-form">
-      <label for="new-project-code">Nome do novo projeto:</label><br>
-      <input type="text" id="new-project-code" name="new-project-code" required>
-      <button type="submit">Criar Projeto</button>
-    </form>
-    
-    <!-- Tabela de projetos -->
-    <table id="projects-table">
-      <thead>
-        <tr>
-          <th>ID</th>
-          <th>Projeto</th>
-          <th>Ações</th>
-        </tr>
-      </thead>
-      <tbody>
-        <!-- Linhas de projetos serão inseridas aqui via JS -->
-      </tbody>
-    </table>
-  </div>
+  <div id="project-container" class="project-grid"></div>
 
   <div class="pagination" id="pagination" hidden>
     <button id="prev-page-btn" disabled>Anterior</button>

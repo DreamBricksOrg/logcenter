@@ -1,0 +1,170 @@
+.picker-box {
+  position: relative;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: 10px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.picker-box,
+.picker-box * {
+  color: #1f2937;
+}
+
+.picker-top {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.picker-search {
+  flex: 1;
+  min-width: 220px;
+}
+
+#project-count {
+  color: #0f172a;
+  font-weight: 600;
+}
+
+#picker-panel {
+  background: #f8fafc;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: 10px;
+  padding: 12px;
+}
+
+#project-list {
+  background: #ffffff;
+  max-height: 240px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
+  margin-top: 10px;
+  padding-top: 10px;
+}
+
+.project-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 4px;
+  border-bottom: 1px dashed rgba(0, 0, 0, 0.08);
+  min-width: 0;
+}
+
+.project-item:last-child {
+  border-bottom: none;
+}
+
+.project-item input[type='checkbox'] {
+  transform: scale(1.15);
+  margin-top: 2px;
+}
+
+.project-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  min-width: 0;
+}
+
+.project-name {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #0f172a;
+  overflow-wrap: anywhere;
+}
+
+.project-code {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: #475569;
+  overflow-wrap: anywhere;
+}
+
+.picker-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.btn-mini {
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  background: rgba(255, 255, 255, 0.9);
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.btn-mini:hover {
+  background: #ffffff;
+}
+
+.hint {
+  font-size: 0.85rem;
+  opacity: 0.8;
+  margin-top: 6px;
+  line-height: 1.3;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 6px;
+  margin: 10px 0 0;
+}
+
+.chips::-webkit-scrollbar {
+  height: 6px;
+}
+
+.chips::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 4px;
+}
+
+.chip {
+  flex: 0 0 auto;
+  max-width: 260px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: 999px;
+  background: #ffffff;
+}
+
+.chip-text {
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 180px;
+}
+
+.chip button {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0 2px;
+  opacity: 0.75;
+  color: #475569;
+}
+
+.chip button:hover {
+  opacity: 1;
+  color: #0f172a;
+}

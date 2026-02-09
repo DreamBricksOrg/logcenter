@@ -4,7 +4,7 @@ from datetime import datetime
 from fastapi import HTTPException, status
 
 from db.utils import get_db
-from core.security import hash_secret
+from core.security import hash_secret, encrypt_secret, decrypt_secret
 from util.helpers import utcnow_iso, format_datetime, generate_uuid
 
 
@@ -213,7 +213,6 @@ async def generate_api_key_for_project(project_id: str) -> str:
 
     db = await get_db()
 
-    # Confirma existência do projeto
     project = await db["projects"].find_one({"_id": oid})
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -222,9 +221,43 @@ async def generate_api_key_for_project(project_id: str) -> str:
     api_key = generate_uuid().replace("-", "")  # 32-char hex string
     salt, hsh = hash_secret(api_key)
 
+    aad = str(oid).encode("utf-8")
+    nonce_b64, ct_b64 = encrypt_secret(api_key, aad=aad)
+
     await db["projects"].update_one({"_id": oid}, {"$set": {
         "api_key_salt": salt,
         "api_key_hash": hsh,
+        "api_key_nonce": nonce_b64,
+        "api_key_enc": ct_b64,
     }})
+
+    return api_key
+
+async def get_api_key_for_project(project_id: str) -> str:
+    """
+    Retorna a API key existente para o projeto.
+    """
+    try:
+        oid = ObjectId(project_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Invalid project ID")
+
+    db = await get_db()
+
+    project = await db["projects"].find_one({"_id": oid})
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    nonce = project.get("api_key_nonce")
+    enc = project.get("api_key_enc")
+    if not nonce or not enc:
+        raise HTTPException(status_code=404, detail="Project has no API key")
+
+    aad = str(oid).encode("utf-8")
+    try:
+        api_key = decrypt_secret(nonce, enc, aad=aad)
+    except Exception:
+        # se a master key mudou ou dado corrompeu
+        raise HTTPException(status_code=500, detail="Could not decrypt API key")
 
     return api_key

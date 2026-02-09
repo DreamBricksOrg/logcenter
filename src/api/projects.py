@@ -87,3 +87,13 @@ async def regenerate_project_apikey(project_id: str, principal=Depends(require_p
         return {"project_id": project_id, "api_key": api_key}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+@router.get("/{project_id}/apikey", response_model=Dict[str, str], status_code=200)
+async def get_project_apikey(project_id: str, principal=Depends(require_principal)):
+    if settings.REQUIRE_API_KEY and principal.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin required")
+    try:
+        api_key = await project_service.get_api_key_for_project(project_id)
+        return {"project_id": project_id, "api_key": api_key}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))

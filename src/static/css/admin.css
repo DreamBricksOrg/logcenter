@@ -85,20 +85,20 @@ button:disabled {
 }
 
 /* Grid Layout */
-.links-grid {
+.project-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     gap: 20px;
 }
 
 @media (max-width: 1024px) {
-    .links-grid {
+    .project-grid {
         grid-template-columns: repeat(2, 1fr);
     }
 }
 
 @media (max-width: 768px) {
-    .links-grid {
+    .project-grid {
         grid-template-columns: 1fr;
     }
 }
@@ -198,22 +198,6 @@ button:disabled {
 .pagination span {
     font-weight: bold;
     color: #034a5d;
-}
-
-/* QR Code */
-.qr-container {
-    display: flex;
-    justify-content: center;
-    gap: 10px;
-    margin: 10px 0;
-}
-
-.qr-container img {
-    background: white;
-    padding: 5px;
-    border-radius: 5px;
-    width: 80px;
-    height: 80px;
 }
 
 /* Loading Spinner */
