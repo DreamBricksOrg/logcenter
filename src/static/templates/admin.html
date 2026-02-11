@@ -1,41 +1,72 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="pt-BR">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>LogCenter - Admin</title>
-  <link rel="stylesheet" href="/src/static/css/admin.css">
-  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-</head>
-<body>
-  <h1>Admin de Projetos - LogCenter</h1>
-  <!-- Cabeçalho com navegação -->
-  <div class="controls">
-    <button id="projects-btn">Projetos</button>
-    <button id="new-project-btn">Novo Projeto</button>
-    <button id="reload-btn">Carregar</button>
-    <button id="export-btn" hidden>Exportar CSV</button>
-    <button id="clients-btn">Clientes</button>
-    <button id="logout-btn">Logout</button>
-  </div>
-  
-  <!-- TODO - implement filters later -->
-  <div class="filter-form" hidden>
-    <button id="apply-filters-btn" hidden>Aplicar Filtros</button>
-  </div>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LogCenter - Admin</title>
+    <link rel="stylesheet" href="/src/static/css/admin.css" />
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  </head>
+  <body>
+    <h1>Admin de Projetos - LogCenter</h1>
+    <!-- Cabeçalho com navegação -->
+    <div class="controls">
+      <button id="projects-btn">Projetos</button>
+      <button id="new-project-btn">Novo Projeto</button>
+      <button id="reload-btn">Carregar</button>
+      <button id="export-btn" hidden>Exportar CSV</button>
+      <button id="clients-btn">Clientes</button>
+      <button id="logout-btn">Logout</button>
+    </div>
 
-  <div id="loading-spinner" class="spinner" style="display: none;"></div>
+    <div class="filter-form" id="filter-form">
+      <label>
+        Nome
+        <input
+          type="text"
+          id="filter-name"
+          placeholder="Ex: LATAM Milhômetro"
+        />
+      </label>
 
-  <div id="project-container" class="project-grid"></div>
+      <label>
+        Code
+        <input type="text" id="filter-code" placeholder="Ex: latam_elt_prj" />
+      </label>
 
-  <div class="pagination" id="pagination" hidden>
-    <button id="prev-page-btn" disabled>Anterior</button>
-    <span id="page-info">Página 1</span>
-    <button id="next-page-btn" disabled>Próxima</button>
-  </div>
+      <label>
+        Status
+        <select id="filter-status">
+          <option value="">Todos</option>
+          <option value="active">active</option>
+          <option value="inactive">inactive</option>
+        </select>
+      </label>
 
-  
-  <!-- Script JavaScript da página de projetos -->
-  <script src="/src/static/js/admin.js"></script>
-</body>
+      <label style="display: flex; gap: 8px; align-items: center">
+        <input type="checkbox" id="filter-has-key" />
+        <span>Somente com API key</span>
+      </label>
+
+      <label style="display: flex; gap: 8px; align-items: center">
+        <input type="checkbox" id="filter-include-inactive" />
+        <span>Incluir inativos (admin)</span>
+      </label>
+
+      <button id="apply-filters-btn">Aplicar Filtros</button>
+      <button id="clear-filters-btn" type="button">Limpar</button>
+    </div>
+
+    <div id="loading-spinner" class="spinner" style="display: none"></div>
+
+    <div id="project-container" class="project-grid"></div>
+
+    <div class="pagination" id="pagination">
+      <button id="prev-page-btn" disabled>Anterior</button>
+      <span id="page-info">Página 1</span>
+      <button id="next-page-btn" disabled>Próxima</button>
+    </div>
+
+    <script src="/src/static/js/admin.js"></script>
+  </body>
 </html>

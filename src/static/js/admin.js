@@ -12,46 +12,71 @@
     return;
   }
 
-  // TODO - implement filters later
-  const filters = {
-    // 'filter-slug': 'code',          // encurtador: slug
-    // 'filter-tittle': 'name',        // encurtador: title
-    // 'filter-notes': 'notes',        // encurtador: notes
-    // 'filter-original': 'extra_1',   // encurtador: original_url
-    // 'filter-callback': 'extra_2',   // encurtador: callback_url
-    // 'filter-date-from': 'date_from',
-    // 'filter-date-to': 'date_to'
+  let currentPage = 1;
+  const pageSize = 9;
+
+  const filterEls = {
+    name: document.getElementById('filter-name'),
+    code: document.getElementById('filter-code'),
+    status: document.getElementById('filter-status'),
+    hasKey: document.getElementById('filter-has-key'),
+    includeInactive: document.getElementById('filter-include-inactive'),
   };
 
-  let currentPage = 1;
-  const pageSize = 9; // 3x3
-
-  // Controles
-  document.getElementById('reload-btn').addEventListener('click', () => {
+  document.getElementById('reload-btn')?.addEventListener('click', () => {
     currentPage = 1;
     loadProjects(true);
   });
 
-  //   document.getElementById('apply-filters-btn').addEventListener('click', () => {
-  //     currentPage = 1;
-  //     loadProjects(false);
-  //   });
+  document
+    .getElementById('apply-filters-btn')
+    ?.addEventListener('click', () => {
+      currentPage = 1;
+      loadProjects(false);
+    });
 
-  document.getElementById('new-project-btn').addEventListener('click', () => {
+  document
+    .getElementById('clear-filters-btn')
+    ?.addEventListener('click', () => {
+      if (filterEls.name) filterEls.name.value = '';
+      if (filterEls.code) filterEls.code.value = '';
+      if (filterEls.status) filterEls.status.value = '';
+      if (filterEls.hasKey) filterEls.hasKey.checked = false;
+      if (filterEls.includeInactive) filterEls.includeInactive.checked = false;
+
+      currentPage = 1;
+      loadProjects(false);
+    });
+
+  const maybeBindEnter = (el) => {
+    if (!el) return;
+    el.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        currentPage = 1;
+        loadProjects(false);
+      }
+    });
+  };
+  maybeBindEnter(filterEls.name);
+  maybeBindEnter(filterEls.code);
+  maybeBindEnter(filterEls.status);
+
+  document.getElementById('new-project-btn')?.addEventListener('click', () => {
     window.location.href = '/pages/form';
   });
 
-  document.getElementById('projects-btn').addEventListener('click', () => {
+  document.getElementById('projects-btn')?.addEventListener('click', () => {
     window.location.href = '/pages/admin';
   });
 
-  document.getElementById('clients-btn').addEventListener('click', () => {
+  document.getElementById('clients-btn')?.addEventListener('click', () => {
     window.location.href = '/pages/clients';
   });
 
   //   document.getElementById('export-btn').addEventListener('click', () => exportCSV());
 
-  document.getElementById('logout-btn').addEventListener('click', async () => {
+  document.getElementById('logout-btn')?.addEventListener('click', async () => {
     const result = await Swal.fire({
       title: 'Sair?',
       text: 'Isso vai remover sua sessão local.',
@@ -67,14 +92,14 @@
     location.href = '/pages/';
   });
 
-  document.getElementById('prev-page-btn').addEventListener('click', () => {
+  document.getElementById('prev-page-btn')?.addEventListener('click', () => {
     if (currentPage > 1) {
       currentPage--;
       loadProjects(false);
     }
   });
 
-  document.getElementById('next-page-btn').addEventListener('click', () => {
+  document.getElementById('next-page-btn')?.addEventListener('click', () => {
     currentPage++;
     loadProjects(false);
   });
@@ -84,6 +109,8 @@
     const container = document.getElementById('project-container');
     const pagination = document.getElementById('pagination');
 
+    if (!spinner || !container || !pagination) return;
+
     spinner.style.display = 'block';
     container.innerHTML = '';
     pagination.hidden = true;
@@ -92,15 +119,20 @@
     params.append('page', String(currentPage));
     params.append('page_size', String(pageSize));
 
-    for (const [id, key] of Object.entries(filters)) {
-      const el = document.getElementById(id);
-      if (!el) continue;
-      const val = el.value;
-      if (val) params.append(key, val);
-    }
+    const name = filterEls.name?.value?.trim();
+    const code = filterEls.code?.value?.trim();
+    const status = filterEls.status?.value;
+    const hasKey = !!filterEls.hasKey?.checked;
+    const includeInactive = !!filterEls.includeInactive?.checked;
+
+    if (name) params.append('name', name);
+    if (code) params.append('code', code);
+    if (status) params.append('status', status);
+    if (hasKey) params.append('has_api_key', 'true');
+    if (includeInactive) params.append('include_inactive', 'true');
 
     try {
-      const res = await fetch(`/projects?${params}`, {
+      const res = await fetch(`/projects/?${params.toString()}`, {
         headers: { 'X-API-Key': apiKey },
       });
 
@@ -114,15 +146,19 @@
       }
 
       const json = await res.json().catch(() => ({}));
-      const list = Array.isArray(json) ? json : json.data || [];
+      const list = Array.isArray(json) ? json : json.items || json.data || [];
+      const total = Array.isArray(json)
+        ? list.length
+        : typeof json.total === 'number'
+          ? json.total
+          : null;
 
       renderProjects(list);
-      updatePagination(list.length);
+      updatePagination(list.length, total);
 
       if (showControls) {
-        // document.querySelector('.filter-form').hidden = false;
-        // document.getElementById('export-btn').hidden = false;
-        document.getElementById('reload-btn').textContent = 'Recarregar';
+        const reload = document.getElementById('reload-btn');
+        if (reload) reload.textContent = 'Recarregar';
       }
     } catch (error) {
       Swal.fire('Erro', 'Falha ao carregar projetos.', 'error');
@@ -133,14 +169,29 @@
     }
   }
 
-  function updatePagination(itemsCount) {
-    document.getElementById('page-info').textContent = `Página ${currentPage}`;
-    document.getElementById('prev-page-btn').disabled = currentPage === 1;
-    document.getElementById('next-page-btn').disabled = itemsCount < pageSize;
+  function updatePagination(itemsCount, total) {
+    const pageInfo = document.getElementById('page-info');
+    const prevBtn = document.getElementById('prev-page-btn');
+    const nextBtn = document.getElementById('next-page-btn');
+
+    if (!pageInfo || !prevBtn || !nextBtn) return;
+
+    prevBtn.disabled = currentPage === 1;
+
+    if (typeof total === 'number') {
+      const totalPages = Math.max(1, Math.ceil(total / pageSize));
+      pageInfo.textContent = `Página ${currentPage} de ${totalPages}`;
+      nextBtn.disabled = currentPage >= totalPages;
+    } else {
+      pageInfo.textContent = `Página ${currentPage}`;
+      nextBtn.disabled = itemsCount < pageSize;
+    }
   }
 
   function renderProjects(list) {
     const c = document.getElementById('project-container');
+    if (!c) return;
+
     c.innerHTML = '';
 
     if (!Array.isArray(list) || list.length === 0) {
@@ -151,8 +202,11 @@
 
     list.forEach((project) => {
       const id = project.id ?? project._id ?? project.project_id ?? '';
-      const code = project.code ?? project.name ?? project.project_code ?? '';
+      const code = project.code ?? project.project_code ?? '';
+      const name = project.name ?? '';
+      const description = project.description ?? '';
       const createdAt = project.created_at ?? project.createdAt ?? Date.now();
+      const status = project.status === 'inactive' ? 'inactive' : 'active';
 
       const div = document.createElement('div');
       div.className = 'card';
@@ -167,28 +221,36 @@
         <div class="card-body">
           <label>
             Code
-            <input type="text" id="code-${id}" value="${escapeAttr(code)}">
+            <input type="text" id="code-${escapeAttr(id)}" value="${escapeAttr(code)}">
           </label>
           <label>
-            Nome (opcional)
-            <input type="text" id="name-${id}" value="${escapeAttr(project.name || '')}">
+            Nome
+            <input type="text" id="name-${escapeAttr(id)}" value="${escapeAttr(name)}">
           </label>
           <label>
-            Notas/Descrição (opcional)
-            <input type="text" id="notes-${id}" value="${escapeAttr(project.notes || project.description || '')}">
+            Descrição
+            <input type="text" id="desc-${escapeAttr(id)}" value="${escapeAttr(description)}">
+          </label>
+
+          <label>
+            Status
+            <select id="status-${escapeAttr(id)}">
+              <option value="active" ${status === 'active' ? 'selected' : ''}>active</option>
+              <option value="inactive" ${status === 'inactive' ? 'selected' : ''}>inactive</option>
+            </select>
           </label>
         </div>
 
         <div class="card-footer">
-          <button onclick="window.__lc_showProjectKey('${id}', '${escapeJs(code)}')">🔑 API Key</button>
-          <button onclick="window.__lc_regenProjectKey('${id}', '${escapeJs(code)}')">♻️ Regenerar API Key</button>
+          <button onclick="window.__lc_showProjectKey('${escapeJs(id)}', '${escapeJs(code)}')">🔑 API Key</button>
+          <button onclick="window.__lc_regenProjectKey('${escapeJs(id)}', '${escapeJs(code)}')">♻️ Regenerar API Key</button>
 
           <div class="card-actions">
-            <button onclick="window.__lc_updateProject('${id}')">Salvar</button>
-            <button class="btn-delete" onclick="window.__lc_deleteProject('${id}', '${escapeJs(code)}')">Excluir</button>
+            <button onclick="window.__lc_updateProject('${escapeJs(id)}')">Salvar</button>
+            <button class="btn-delete" onclick="window.__lc_deleteProject('${escapeJs(id)}', '${escapeJs(code)}')">Excluir</button>
           </div>
 
-          <div class="status" id="status-${id}" style="text-align: center; height: 1.2rem;"></div>
+          <div class="status" id="statusmsg-${escapeAttr(id)}" style="text-align: center; height: 1.2rem;"></div>
         </div>
       `;
 
@@ -232,31 +294,41 @@
     sel.addRange(range);
   }
 
-  // ---- Ações ----
-
   window.__lc_updateProject = async function (id) {
+    const safeId = String(id ?? '');
+    if (!safeId) return;
+
     const btn = document.querySelector(
-      `#project-${CSS.escape(String(id))} button[onclick^="window.__lc_updateProject"]`
+      `#project-${CSS.escape(safeId)} button[onclick^="window.__lc_updateProject"]`
     );
+
     const originalText = btn?.textContent ?? 'Salvar';
     if (btn) {
       btn.textContent = 'Salvando...';
       btn.disabled = true;
     }
 
-    const params = new URLSearchParams({
-      code: document.getElementById(`code-${id}`)?.value ?? '',
-      name: document.getElementById(`name-${id}`)?.value ?? '',
-      notes: document.getElementById(`notes-${id}`)?.value ?? '',
-    });
+    const payload = {
+      code: (document.getElementById(`code-${safeId}`)?.value ?? '').trim(),
+      name: (document.getElementById(`name-${safeId}`)?.value ?? '').trim(),
+      description: (
+        document.getElementById(`desc-${safeId}`)?.value ?? ''
+      ).trim(),
+      status: document.getElementById(`status-${safeId}`)?.value ?? 'active',
+    };
 
     try {
-      const res = await fetch(`/projects/${encodeURIComponent(id)}?${params}`, {
+      const res = await fetch(`/projects/${encodeURIComponent(safeId)}`, {
         method: 'PATCH',
-        headers: { 'X-API-Key': apiKey },
+        headers: {
+          'X-API-Key': apiKey,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
       });
 
-      const el = document.getElementById(`status-${id}`);
+      const el = document.getElementById(`statusmsg-${safeId}`);
+
       if (res.status === 401) {
         Swal.fire({
           icon: 'error',
@@ -274,8 +346,13 @@
           }, 2000);
         }
       } else {
+        const err = await res.json().catch(() => ({}));
         if (el) el.textContent = '❌ Erro ao atualizar.';
-        Swal.fire('Erro', 'Não foi possível atualizar o projeto.', 'error');
+        Swal.fire(
+          'Erro',
+          err.detail || 'Não foi possível atualizar o projeto.',
+          'error'
+        );
       }
     } catch (err) {
       Swal.fire('Erro', 'Falha na comunicação.', 'error');
@@ -288,9 +365,12 @@
   };
 
   window.__lc_deleteProject = async function (id, code) {
+    const safeId = String(id ?? '');
+    const safeCode = String(code ?? '');
+
     const result = await Swal.fire({
       title: 'Tem certeza?',
-      text: `Excluir o projeto "${code}"? Esta ação não pode ser revertida!`,
+      text: `Excluir o projeto "${safeCode}"? Esta ação não pode ser revertida!`,
       icon: 'warning',
       showCancelButton: true,
       confirmButtonColor: '#d33',
@@ -302,7 +382,7 @@
     if (!result.isConfirmed) return;
 
     try {
-      const res = await fetch(`/projects/${encodeURIComponent(id)}`, {
+      const res = await fetch(`/projects/${encodeURIComponent(safeId)}`, {
         method: 'DELETE',
         headers: { 'X-API-Key': apiKey },
       });
@@ -317,10 +397,15 @@
       }
 
       if (res.ok) {
-        document.getElementById(`project-${id}`)?.remove();
+        document.getElementById(`project-${safeId}`)?.remove();
         Swal.fire('Excluído!', 'O projeto foi removido.', 'success');
       } else {
-        Swal.fire('Erro', 'Não foi possível excluir o projeto.', 'error');
+        const err = await res.json().catch(() => ({}));
+        Swal.fire(
+          'Erro',
+          err.detail || 'Não foi possível excluir o projeto.',
+          'error'
+        );
       }
     } catch (err) {
       Swal.fire('Erro', 'Falha na comunicação.', 'error');
@@ -367,10 +452,10 @@
             <p style="margin:0 0 10px;">Copie e guarde:</p>
             <pre id="api-key-pre" style="text-align:left; white-space:pre-wrap; word-break:break-all; background:#f6f6f6; padding:12px; border-radius:6px; margin:0;">${escapeHtml(key)}</pre>
             <div style="margin-top: 12px; display:flex; gap:10px; justify-content:center;">
-            <button id="copy-key-btn" style="padding: 8px 16px;">Copiar</button>
-            <button id="select-key-btn" style="padding: 8px 16px;">Selecionar</button>
+              <button id="copy-key-btn" style="padding: 8px 16px;">Copiar</button>
+              <button id="select-key-btn" style="padding: 8px 16px;">Selecionar</button>
             </div>
-        `
+          `
           : `<p>Não veio API key na resposta.</p>`,
         showConfirmButton: true,
         confirmButtonText: 'Fechar',
@@ -381,9 +466,7 @@
         const selectBtn = document.getElementById('select-key-btn');
         const pre = document.getElementById('api-key-pre');
 
-        if (selectBtn && pre) {
-          selectBtn.onclick = () => selectNodeText(pre);
-        }
+        if (selectBtn && pre) selectBtn.onclick = () => selectNodeText(pre);
 
         if (copyBtn && key) {
           copyBtn.onclick = async () => {
@@ -412,7 +495,6 @@
     }
   };
 
-  // Regenera API key
   window.__lc_regenProjectKey = async function (id, code) {
     const result = await Swal.fire({
       title: 'Regenerar API Key?',
@@ -466,13 +548,13 @@
         icon: 'success',
         title: 'API Key regenerada',
         html: `
-        <p style="margin:0 0 10px;">Copie agora (a anterior foi invalidada):</p>
-        <pre id="api-key-pre" style="text-align:left; white-space:pre-wrap; word-break:break-all; background:#f6f6f6; padding:12px; border-radius:6px; margin:0;">${escapeHtml(key)}</pre>
-        <div style="margin-top: 12px; display:flex; gap:10px; justify-content:center;">
-          <button id="copy-key-btn" style="padding: 8px 16px;">Copiar</button>
-          <button id="select-key-btn" style="padding: 8px 16px;">Selecionar</button>
-        </div>
-      `,
+          <p style="margin:0 0 10px;">Copie agora (a anterior foi invalidada):</p>
+          <pre id="api-key-pre" style="text-align:left; white-space:pre-wrap; word-break:break-all; background:#f6f6f6; padding:12px; border-radius:6px; margin:0;">${escapeHtml(key)}</pre>
+          <div style="margin-top: 12px; display:flex; gap:10px; justify-content:center;">
+            <button id="copy-key-btn" style="padding: 8px 16px;">Copiar</button>
+            <button id="select-key-btn" style="padding: 8px 16px;">Selecionar</button>
+          </div>
+        `,
         showConfirmButton: true,
         confirmButtonText: 'Fechar',
         didOpen: () => {
@@ -480,9 +562,7 @@
           const selectBtn = document.getElementById('select-key-btn');
           const pre = document.getElementById('api-key-pre');
 
-          if (selectBtn && pre) {
-            selectBtn.onclick = () => selectNodeText(pre);
-          }
+          if (selectBtn && pre) selectBtn.onclick = () => selectNodeText(pre);
 
           if (copyBtn) {
             copyBtn.onclick = async () => {
@@ -543,7 +623,6 @@
     // }
   }
 
-  // Helpers: evitar quebrar HTML/JS com dados
   function escapeHtml(s) {
     return String(s ?? '')
       .replace(/&/g, '&amp;')
@@ -563,6 +642,5 @@
       .replace(/'/g, "\\'");
   }
 
-  // Load inicial
   loadProjects(true);
 })();

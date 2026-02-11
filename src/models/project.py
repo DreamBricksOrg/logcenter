@@ -43,3 +43,15 @@ class ProjectOut(BaseModel):
         "populate_by_name": True,
         "extra": "ignore",
     }
+
+class ProjectListFilters(BaseModel):
+    name: Optional[str] = Field(default=None, description="Filtro por nome (contém, case-insensitive)")
+    code: Optional[str] = Field(default=None, description="Filtro por code (contém, case-insensitive)")
+    status: Optional[ProjectStatus] = Field(default=None, description="Filtro por status exato")
+    has_api_key: Optional[bool] = Field(default=None, description="Filtra por presença de api key (hash)")
+
+class ProjectListResponse(BaseModel):
+    items: List["ProjectOut"]
+    total: int
+    page: int
+    page_size: int

@@ -127,6 +127,62 @@ async def list_projects(
     return [_public_out(d) for d in docs]
 
 
+async def list_projects_paginated(
+    name: Optional[str] = None,
+    code: Optional[str] = None,
+    status: Optional[str] = None,
+    has_api_key: Optional[bool] = None,
+    *,
+    include_inactive: bool = False,
+    page: int = 1,
+    page_size: int = 30,
+) -> Dict[str, Any]:
+    db = await get_db()
+
+    query: Dict[str, Any] = {}
+
+    if name:
+        query["name"] = {"$regex": name, "$options": "i"}
+
+    if code:
+        query["code"] = {"$regex": code, "$options": "i"}
+
+    if status:
+        query["status"] = status
+    else:
+        if not include_inactive:
+            query["status"] = "active"
+
+    if has_api_key is True:
+        query["api_key_hash"] = {"$exists": True, "$ne": None}
+    elif has_api_key is False:
+        query["$or"] = [
+            {"api_key_hash": {"$exists": False}},
+            {"api_key_hash": None},
+        ]
+
+    total = await db["projects"].count_documents(query)
+
+    skip = (page - 1) * page_size
+
+    cursor = (
+        db["projects"]
+        .find(query)
+        .sort("createdAt", -1)
+        .skip(skip)
+        .limit(page_size)
+    )
+
+    docs = await cursor.to_list(length=page_size)
+
+    return {
+        "items": [_public_out(d) for d in docs],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
+
+
 async def update_project(
     project_id: str,
     *,
