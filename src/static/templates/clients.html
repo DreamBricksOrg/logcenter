@@ -20,20 +20,83 @@
 
     <div
       class="filter-form"
-      style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap"
+      style="display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end"
     >
-      <label style="display: flex; gap: 8px; align-items: center">
-        Grupo:
+      <label
+        style="
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+          min-width: 240px;
+        "
+      >
+        <span>Buscar (email ou nome)</span>
+        <input id="filter-q" type="text" placeholder="ex: admin@... ou Admin" />
+      </label>
+
+      <label
+        style="
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+          min-width: 160px;
+        "
+      >
+        <span>Role</span>
+        <select id="filter-role">
+          <option value="">Todos</option>
+          <option value="client">client</option>
+          <option value="admin">admin</option>
+        </select>
+      </label>
+
+      <label
+        style="
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+          min-width: 240px;
+        "
+      >
+        <span>Grupo (project_code)</span>
         <select id="group-select">
           <option value="__all__">Todos</option>
         </select>
       </label>
 
-      <span id="group-summary" style="font-size: 0.95rem; opacity: 0.8"></span>
+      <label
+        style="
+          display: inline-flex;
+          gap: 8px;
+          align-items: center;
+          padding-bottom: 8px;
+        "
+      >
+        <input id="filter-has-project" type="checkbox" />
+        <span>Somente com projetos</span>
+      </label>
+
+      <div
+        style="
+          display: flex;
+          gap: 10px;
+          align-items: center;
+          padding-bottom: 8px;
+        "
+      >
+        <button id="apply-filters-btn" type="button">Aplicar</button>
+        <button id="clear-filters-btn" type="button">Limpar</button>
+      </div>
+
+      <span
+        id="group-summary"
+        style="font-size: 0.95rem; opacity: 0.8; padding-bottom: 10px"
+      ></span>
     </div>
 
     <div id="loading-spinner" class="spinner" style="display: none"></div>
-    <div id="project-container" class="project-grid"></div>
+
+    <div id="users-container" class="project-grid"></div>
 
     <div class="pagination" id="pagination" hidden>
       <button id="prev-page-btn" disabled>Anterior</button>
