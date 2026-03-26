@@ -30,3 +30,12 @@ class UserOut(BaseModel):
 
     class Config:
         validate_by_name = True
+
+class UserListResponse(BaseModel):
+    items: List["UserOut"]
+    total: int
+    page: int = Field(ge=1)
+    page_size: int = Field(ge=1, le=100)
+
+    class Config:
+        validate_by_name = True

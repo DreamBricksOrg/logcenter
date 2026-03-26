@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>LogCenter - Login</title>
+  <style>
+    @import url('/src/static/css/global.css');
+    @import url('/src/static/css/login.css');
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="content">
+      <div class="tittle">
+        <img src="/src/static/images/logo_sem_fundo.png" alt="" width="30%">
+        <h1>LogCenter</h1>
+        <h2>Login de Administrador</h2>
+      </div>
+      <form id="login-form">
+        <label for="email">Email:
+          <input type="text" id="email" name="email" required>
+        </label>
+        <label for="password">Senha:
+          <input type="password" id="password" name="password" required>
+        </label>
+        <button type="submit">Entrar</button>
+      </form>
+      <div class="spinner-container" id="spinner-container">
+        <div class="spinner"></div>
+      </div>
+      <pre id="out" style="display: none;"></pre>
+      <!-- Mensagem de erro de login -->
+      <p id="error-msg" class="error"></p>
+    </div>
+  </div>  
+
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <!-- Script JavaScript da página de login -->
+  <script src="/src/static/js/login.js"></script>
+</body>
+</html>

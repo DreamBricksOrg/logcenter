@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Novo Projeto</title>
+  <style>
+    @import url('/src/static/css/global.css');
+    @import url('/src/static/css/login.css');
+    @import url('/src/static/css/form.css');
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="content">
+      <div class="tittle">
+        <h1>Novo Projeto</h1>
+        <h2>Preencha os dados abaixo</h2>
+      </div>
+
+      <form id="project-form">
+        <label>
+          Nome do Projeto
+          <input type="text" name="name" placeholder="Ex: logcenter-prod" maxlength="100" required />
+        </label>
+
+        <label>
+          Code (obrigatório)
+          <input
+            type="text"
+            name="code"
+            placeholder="ex: logcenter-prod (a-z 0-9 - _ .)"
+            pattern="^[a-z0-9\\-_.]+$"
+            title="Use apenas letras minúsculas, números, hífen (-), underscore (_) e ponto (.)"
+            required
+          />
+        </label>
+
+        <label>
+          Descrição (opcional)
+          <input type="text" name="description" placeholder="Até 300 caracteres" maxlength="300" />
+        </label>
+
+        <label>
+          API Key (opcional)
+          <input type="text" name="api_key_plain" placeholder="Min 8 caracteres (se quiser definir manualmente)" minlength="8" />
+        </label>
+
+        <label>
+          Status (opcional)
+          <select name="status">
+            <option value="active" selected>active</option>
+            <option value="inactive">inactive</option>
+          </select>
+        </label>
+
+        <label>
+          Config (JSON opcional)
+          <textarea name="config" rows="5" placeholder='{"foo":"bar"}'></textarea>
+        </label>
+
+        <button type="submit">Criar Projeto</button>
+        <button type="button" id="admin-back" class="btn-secondary">Voltar</button>
+      </form>
+
+      <div class="spinner-container" id="spinner-container">
+        <div class="spinner"></div>
+      </div>
+
+      <div id="result"></div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <script src="/src/static/js/form.js"></script>
+</body>
+</html>
