@@ -22,7 +22,7 @@ from util.queries import build_filter
 router = APIRouter(prefix="/logs", tags=["logs"])
 
 
-def require_api_key(x_api_key: Optional[str] = Header(default=None, convert_underscores=False)):
+def require_api_key(x_api_key: Optional[str] = Header(default=None, alias="X-API-Key")):
     if settings.REQUIRE_API_KEY and not x_api_key:
         raise HTTPException(status_code=401, detail="Missing API key")
     return True
